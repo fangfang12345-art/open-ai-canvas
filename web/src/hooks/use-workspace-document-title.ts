@@ -17,7 +17,7 @@ export function useWorkspaceDocumentTitle() {
     const { t } = useTranslation();
     const { pathname, search } = useLocation();
     const [slug, id] = pathname.split("/").filter(Boolean);
-    const canvasId = slug === "canvas" ? id || "" : "";
+    const canvasId = slug === "canvas" || slug === "remix" ? id || "" : "";
     const canvasTitle = useCanvasStore((state) => (canvasId ? state.projects.find((project) => project.id === canvasId)?.title?.trim() || "" : ""));
     const dramaProjectId = slug === "projects" && id && id !== "new" ? id : "";
     const dramaName = useCachedDramaProjectName(dramaProjectId);

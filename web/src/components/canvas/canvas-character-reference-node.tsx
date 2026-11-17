@@ -1,5 +1,4 @@
-import { Image as ImageIcon, Mic } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { translate } from "@/i18n";
@@ -41,14 +40,12 @@ export function characterInitial(name: string) {
     return Array.from(name.trim())[0] || translate("canvasA.characterNode.initialFallback");
 }
 
-/** 画布上的角色卡：海报式主视觉，底部压名字与形象/声音状态。 */
+/** 画布上的角色卡：海报式主视觉，底部展示名称与性格特征。 */
 export function CanvasCharacterReferenceNodeContent({ node }: { node: CanvasNodeData }) {
     const { t } = useTranslation();
     const metadata = node.metadata;
     const name = metadata?.characterName || node.title || t("canvasA.characterNode.unnamed");
-    const role = typeof metadata?.characterDefinition?.role === "string" ? metadata.characterDefinition.role.trim() : "";
-    const visualReady = metadata?.characterVisualStatus === "ready";
-    const voiceReady = metadata?.characterVoiceStatus === "ready";
+    const personality = typeof metadata?.characterDefinition?.personality === "string" ? metadata.characterDefinition.personality.trim() : "";
     const cover = useCharacterCoverSrc(metadata?.characterCoverUrl);
 
     return (
@@ -64,32 +61,16 @@ export function CanvasCharacterReferenceNodeContent({ node }: { node: CanvasNode
                 </div>
             )}
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black/90 via-black/45 to-transparent" />
-            <span className="absolute left-3.5 top-3 text-[var(--fs-label)] font-medium uppercase tracking-[.24em] text-white/55">Character</span>
             <div className="absolute inset-x-0 bottom-0 flex items-end gap-3 px-4 pb-3">
                 <div className="min-w-0 flex-1">
                     <div className="truncate text-[var(--fs-heading)] font-semibold leading-6 tracking-tight">{name}</div>
-                    <div className="truncate text-[var(--fs-label)] leading-4 text-white/55">
-                        {role || (voiceReady && metadata?.characterVoiceName ? t("canvasA.characterNode.voiceWithName", { name: metadata.characterVoiceName }) : t("canvasA.characterNode.card"))}
-                    </div>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                    <Indicator ready={visualReady} label={visualReady ? t("canvasA.characterNode.visualReady") : t("canvasA.characterNode.visualPending")}>
-                        <ImageIcon className="size-3" />
-                    </Indicator>
-                    <Indicator ready={voiceReady} label={voiceReady ? t("canvasA.characterNode.voiceBound", { name: metadata?.characterVoiceName || t("canvasA.characterNode.voiceBoundFallback") }) : t("canvasA.characterNode.voiceUnbound")}>
-                        <Mic className="size-3" />
-                    </Indicator>
+                    {personality ? (
+                        <div className="truncate text-[var(--fs-label)] leading-4 text-white/55" title={personality}>
+                            {personality}
+                        </div>
+                    ) : null}
                 </div>
             </div>
         </div>
-    );
-}
-
-function Indicator({ ready, label, children }: { ready: boolean; label: string; children: ReactNode }) {
-    return (
-        <span title={label} aria-label={label} className={`relative grid size-6 place-items-center rounded-full border backdrop-blur ${ready ? "border-white/25 bg-white/15 text-white" : "border-white/10 bg-white/[.04] text-white/35"}`}>
-            {children}
-            {ready ? <span className="absolute -right-px -top-px size-1.5 rounded-full bg-emerald-400" /> : null}
-        </span>
     );
 }

@@ -115,12 +115,7 @@ func (s *Service) uploadResourceFile(userID, reservationID, fileName string, siz
 	}
 	kind = uploadedResourceKind(mimeType)
 	if existing != nil {
-		if reservationID != "" {
-			if err := s.ReleaseChunkUploadSession(userID, reservationID); err != nil {
-				return nil, err
-			}
-		}
-		return s.retryStoredResource(userID, existing, kind, mimeType, size, file)
+		return s.retryStoredResource(userID, existing, kind, mimeType, size, file, reservationID)
 	}
 	if reservationID != "" {
 		resource, _, err := s.storeResource(userID, kind, fileName, mimeType, size, width, height, durationMs, file, uploadKey, false, reservationID)
@@ -425,7 +420,7 @@ func (s *Service) storeResourceObject(resource *model.Resource, fileName string,
 	return etag, nil
 }
 
-func (s *Service) retryStoredResource(userID string, resource *model.Resource, kind string, mimeType string, size int64, body io.Reader) (*model.Resource, error) {
+func (s *Service) retryStoredResource(userID string, resource *model.Resource, kind string, mimeType string, size int64, body io.Reader, reservations ...string) (*model.Resource, error) {
 	if resource == nil {
 		return nil, errors.New("资源不存在")
 	}
@@ -456,7 +451,13 @@ func (s *Service) retryStoredResource(userID string, resource *model.Resource, k
 	resource.Status = model.ResourceStatusPending
 	resource.Error = ""
 	resource.UpdatedAt = time.Now()
-	day, err := s.reserveRetryUploadQuota(userID, size)
+	reservationID, day := "", ""
+	if len(reservations) > 0 {
+		reservationID = reservations[0]
+	}
+	if reservationID == "" {
+		day, err = s.reserveRetryUploadQuota(userID, size)
+	}
 	if err != nil {
 		resource.Status = model.ResourceStatusFailed
 		resource.Error = err.Error()
@@ -470,7 +471,9 @@ func (s *Service) retryStoredResource(userID string, resource *model.Resource, k
 	etag, err = s.storeResourceObject(resource, "", body)
 	resource.UpdatedAt = time.Now()
 	if err != nil {
-		s.releaseRetryUploadQuota(userID, day, size)
+		if reservationID == "" {
+			s.releaseRetryUploadQuota(userID, day, size)
+		}
 		resource.Status = model.ResourceStatusFailed
 		resource.Error = err.Error()
 		if saveErr := s.repo.SaveResource(resource); saveErr != nil {
@@ -480,14 +483,23 @@ func (s *Service) retryStoredResource(userID string, resource *model.Resource, k
 	}
 	resource.Status = model.ResourceStatusReady
 	resource.ETag = etag
-	if err := s.saveResourceWithinStorageLimit(resource, ""); err != nil {
-		s.releaseRetryUploadQuota(userID, day, size)
-		resource.Status = model.ResourceStatusFailed
-		resource.Error = "保存资源重试就绪状态失败"
-		if saveErr := s.repo.SaveResource(resource); saveErr != nil {
-			return nil, errors.Join(err, fmt.Errorf("记录资源重试失败状态失败：%w", saveErr))
+	if err := s.saveResourceWithinStorageLimit(resource, reservationID); err != nil {
+		if reservationID == "" {
+			s.releaseRetryUploadQuota(userID, day, size)
 		}
-		return nil, fmt.Errorf("保存资源重试就绪状态失败：%w", err)
+		cleanupErr := s.deleteStoredResourceObject(userID, resource)
+		if cleanupErr == nil {
+			if deleteErr := s.repo.DeleteResource(userID, resource.ID); deleteErr != nil {
+				return nil, errors.Join(err, fmt.Errorf("清理资源重试记录失败：%w", deleteErr))
+			}
+			return nil, fmt.Errorf("保存资源重试就绪状态失败：%w", err)
+		}
+		resource.Status = model.ResourceStatusFailed
+		resource.Error = fmt.Sprintf("保存资源重试就绪状态失败，物理对象清理失败：%v", cleanupErr)
+		if saveErr := s.repo.SaveResource(resource); saveErr != nil {
+			return nil, errors.Join(err, cleanupErr, fmt.Errorf("记录资源重试失败状态失败：%w", saveErr))
+		}
+		return nil, errors.Join(err, fmt.Errorf("清理已重试上传资源对象失败：%w", cleanupErr))
 	}
 	s.recordActivity(userID, "resource", 1)
 	return resource, nil

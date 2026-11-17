@@ -1,4 +1,5 @@
 import { getActiveUserScope } from "@/lib/user-scope";
+import { createClientId } from "@/lib/client-id";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { http, apiBaseURL, ApiError } from "@/services/api/request";
 import type { OSSConnectionTestInput, OSSConnectionTestResult, OSSProvider, S3Preset } from "@/lib/oss-settings";
@@ -85,6 +86,7 @@ export type ResourceUploadMeta = {
     durationMs?: number;
     fileName?: string;
     idempotencyKey?: string;
+    purpose?: "video-transfer";
 };
 
 /**
@@ -266,13 +268,16 @@ export function isResourceUrl(url?: string) {
 const CHUNK_UPLOAD_THRESHOLD = 50 << 20;
 const CHUNK_UPLOAD_RETRIES = 2;
 
-export async function uploadResourceFile(file: Blob, kind: "image" | "video" | "audio" | "file", meta?: ResourceUploadMeta, onProgress?: (uploadedBytes: number, totalBytes: number) => void): Promise<RemoteResource> {
+export async function uploadResourceFile(file: Blob, kind: "image" | "video" | "audio" | "file", meta?: ResourceUploadMeta, onProgress?: (uploadedBytes: number, totalBytes: number) => void, signal?: AbortSignal): Promise<RemoteResource> {
     const name = meta?.fileName || (file instanceof File ? file.name : `${kind}.${extensionFromMime(file.type, kind)}`);
+    const generation = accessGeneration;
+    const scope = getActiveUserScope();
     // 分片与 multipart 两条路径的失败都要归一成 ResourceUploadError，
     // 否则调用方只能靠文案猜测该重试还是该报错。
     try {
-        if (file.size > CHUNK_UPLOAD_THRESHOLD) {
-            const resource = await uploadFileInChunks(file, name, kind, meta, onProgress);
+        if (meta?.purpose === "video-transfer" || file.size > CHUNK_UPLOAD_THRESHOLD) {
+            const resource = await uploadFileInChunks(file, name, kind, meta, onProgress, signal);
+            assertResourceRequestCurrent(generation, scope);
             resourceCache.set(resourceCacheKey(resource.id), resource);
             return resource;
         }
@@ -284,12 +289,14 @@ export async function uploadResourceFile(file: Blob, kind: "image" | "video" | "
         if (meta?.durationMs) formData.append("durationMs", String(Math.round(meta.durationMs)));
         const data = await http.post<{ resource: RemoteResource }>("/resources", formData, {
             ...uploadRequestConfig(meta?.idempotencyKey, file.size),
+            signal,
             onUploadProgress: onProgress
                 ? ({ loaded, total }) => {
                       if (total && total > 0) onProgress(Math.min(file.size, (file.size * loaded) / total), file.size);
                   }
                 : undefined,
         });
+        assertResourceRequestCurrent(generation, scope);
         resourceCache.set(resourceCacheKey(data.resource.id), data.resource);
         return data.resource;
     } catch (error) {
@@ -299,39 +306,47 @@ export async function uploadResourceFile(file: Blob, kind: "image" | "video" | "
 
 // 分片上传：POST 开始会话 → 逐片 PUT 原始二进制（每片 8MB）→ POST 合并落库。
 // 单请求体积小、可断点续传/失败重试；单文件不再受 50MB 限制（仅日/总量配额约束）。
-async function uploadFileInChunks(file: Blob, name: string, kind: "image" | "video" | "audio" | "file", meta: ResourceUploadMeta | undefined, onProgress?: (uploadedBytes: number, totalBytes: number) => void) {
+async function uploadFileInChunks(file: Blob, name: string, kind: "image" | "video" | "audio" | "file", meta: ResourceUploadMeta | undefined, onProgress?: (uploadedBytes: number, totalBytes: number) => void, signal?: AbortSignal) {
+    const requestMeta = meta?.purpose === "video-transfer" && !meta.idempotencyKey?.trim() ? { ...meta, idempotencyKey: `video-transfer:${createClientId()}` } : meta;
     // 片级失败通常意味着会话过期/网络抖动：整体重开一次会话重传（整传重试）。
     for (let attempt = 0; attempt < CHUNK_UPLOAD_RETRIES; attempt++) {
         try {
-            return await runChunkedUpload(file, name, kind, meta, onProgress);
+            return await runChunkedUpload(file, name, kind, requestMeta, onProgress, signal);
         } catch (error) {
-            if (attempt === CHUNK_UPLOAD_RETRIES - 1) throw error;
+            if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError") || (error instanceof ApiError && !error.retryable) || attempt === CHUNK_UPLOAD_RETRIES - 1) throw error;
         }
     }
     throw new Error("上传失败");
 }
 
-async function runChunkedUpload(file: Blob, name: string, kind: "image" | "video" | "audio" | "file", meta: ResourceUploadMeta | undefined, onProgress?: (uploadedBytes: number, totalBytes: number) => void) {
+async function runChunkedUpload(file: Blob, name: string, kind: "image" | "video" | "audio" | "file", meta: ResourceUploadMeta | undefined, onProgress?: (uploadedBytes: number, totalBytes: number) => void, signal?: AbortSignal) {
     const session = await http.post<{ uploadId: string; chunkSize: number; chunkCount: number }>(
         "/resources/uploads",
-        { fileName: name, kind, size: file.size, width: meta?.width, height: meta?.height, durationMs: meta?.durationMs },
-        uploadRequestConfig(meta?.idempotencyKey),
+        { fileName: name, kind, size: file.size, width: meta?.width, height: meta?.height, durationMs: meta?.durationMs, ...(meta?.purpose ? { purpose: meta.purpose } : {}), ...(meta?.idempotencyKey ? { idempotencyKey: meta.idempotencyKey } : {}) },
+        { ...uploadRequestConfig(meta?.idempotencyKey), signal },
     );
-    for (let index = 0; index < session.chunkCount; index++) {
-        const start = index * session.chunkSize;
-        const end = Math.min(file.size, start + session.chunkSize);
-        const blob = file.slice(start, end);
-        // raw 二进制直传，与后端按裸 body 逐片落盘对齐。
-        await http.put<{ index: number }>(`/resources/uploads/${encodeURIComponent(session.uploadId)}/chunks/${index}`, blob, {
-            timeout: uploadTimeoutMs(blob.size),
-            headers: { "Content-Type": "application/octet-stream" },
-            onUploadProgress: onProgress ? ({ loaded }) => onProgress(start + Math.min(loaded, blob.size), file.size) : undefined,
-        });
-        onProgress?.(Math.min(end, file.size), file.size);
+    try {
+        for (let index = 0; index < session.chunkCount; index++) {
+            const start = index * session.chunkSize;
+            const end = Math.min(file.size, start + session.chunkSize);
+            const blob = file.slice(start, end);
+            // raw 二进制直传，与后端按裸 body 逐片落盘对齐。
+            await http.put<{ index: number }>(`/resources/uploads/${encodeURIComponent(session.uploadId)}/chunks/${index}`, blob, {
+                timeout: uploadTimeoutMs(blob.size),
+                signal,
+                headers: { "Content-Type": "application/octet-stream" },
+                onUploadProgress: onProgress ? ({ loaded }) => onProgress(start + Math.min(loaded, blob.size), file.size) : undefined,
+            });
+            onProgress?.(Math.min(end, file.size), file.size);
+        }
+        // 合并时后端要把整份文件写入存储（对象存储为同步上传），超时按整份大小计算。
+        const complete = await http.post<{ resource: RemoteResource }>(`/resources/uploads/${encodeURIComponent(session.uploadId)}/complete`, undefined, { timeout: meta?.purpose === "video-transfer" ? 0 : uploadTimeoutMs(file.size), signal });
+        return complete.resource;
+    } catch (error) {
+        // 取消后也要释放会话配额，清理请求不能继承已取消的 signal 或覆盖原始错误。
+        await http.delete(`/resources/uploads/${encodeURIComponent(session.uploadId)}`, { timeout: 10_000 }).catch(() => undefined);
+        throw error;
     }
-    // 合并时后端要把整份文件写入存储（对象存储为同步上传），超时按整份大小计算。
-    const complete = await http.post<{ resource: RemoteResource }>(`/resources/uploads/${encodeURIComponent(session.uploadId)}/complete`, undefined, { timeout: uploadTimeoutMs(file.size) });
-    return complete.resource;
 }
 
 // 失败分类直接复用 request() 已经算好的 ApiError.retryable（408/425/429/5xx 可重试），
@@ -359,6 +374,22 @@ export async function importResourceFromUrl(url: string, kind: "image" | "video"
     const data = await http.post<{ resource: RemoteResource }>("/resources/import", { url, kind, width: meta?.width, height: meta?.height, durationMs: meta?.durationMs }, uploadRequestConfig(meta?.idempotencyKey));
     resourceCache.set(resourceCacheKey(data.resource.id), data.resource);
     return data.resource;
+}
+
+export type YouTubeVideoImport = {
+    resource: RemoteResource;
+    title: string;
+    sourceUrl: string;
+    videoId: string;
+};
+
+export async function importYouTubeVideo(url: string, signal: AbortSignal): Promise<YouTubeVideoImport> {
+    const generation = accessGeneration;
+    const scope = getActiveUserScope();
+    const data = await http.post<YouTubeVideoImport>("/resources/import-youtube", { url }, { signal, timeout: 6 * 60_000 });
+    assertResourceRequestCurrent(generation, scope);
+    resourceCache.set(resourceCacheKey(data.resource.id), data.resource);
+    return data;
 }
 
 const UPLOAD_TIMEOUT_FLOOR_MS = 60_000;

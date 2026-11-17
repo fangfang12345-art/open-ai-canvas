@@ -20,6 +20,8 @@ export const jaJP: Messages = {
     },
     nav: {
         tools: {
+            remix: "動画リミックス",
+            videoTransfer: "動画の再利用",
             create: "作成",
             projects: "ショートドラマ",
             canvas: "キャンバス",

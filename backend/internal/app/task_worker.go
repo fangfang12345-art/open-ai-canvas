@@ -11,6 +11,7 @@ import (
 
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/platform"
+	"yingce/backend/internal/videotransfer"
 )
 
 const newAPIChannel2TaskSyncMaxAge = 5 * time.Minute
@@ -190,6 +191,9 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 	}
 	if task.Type == model.TaskTypeTimelineRender {
 		return w.processTimelineRender(task, ctx)
+	}
+	if task.Type == videotransfer.TaskType {
+		return w.processVideoTransfer(task, ctx)
 	}
 	if task.MediaRecoveryJSON != "" {
 		result, recoveryErr := s.resumeTaskMedia(ctx, task)
@@ -431,11 +435,25 @@ func taskExecutionTimeout(task *model.Task, policy RuntimeTaskPolicy) time.Durat
 	if task == nil {
 		return time.Duration(policy.DefaultTimeoutMinutes) * time.Minute
 	}
+	if task.Type == videotransfer.TaskType {
+		var input videoTransferTaskInput
+		if json.Unmarshal([]byte(task.InputJSON), &input) == nil && input.SegmentCount > 0 {
+			// 每段独立两小时上限，父任务预算随段数增长；防止时长溢出。
+			const maximum = time.Duration(1<<63 - 1)
+			batches := int64(input.SegmentCount)
+			if batches > int64((maximum-time.Hour)/(2*time.Hour)) {
+				return maximum
+			}
+			return time.Duration(batches)*2*time.Hour + time.Hour
+		}
+	}
 	return taskExecutionTimeoutWithPolicy(task.Type, policy)
 }
 
 func taskExecutionTimeoutWithPolicy(taskType string, policy RuntimeTaskPolicy) time.Duration {
 	switch {
+	case taskType == videotransfer.TaskType:
+		return 2 * time.Hour
 	case strings.HasPrefix(taskType, "canvas_video") || strings.HasPrefix(taskType, "video_"):
 		return max(time.Duration(policy.VideoTimeoutMinutes)*time.Minute, 5*time.Minute)
 	case strings.HasPrefix(taskType, "canvas_image"):

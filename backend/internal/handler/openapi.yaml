@@ -37,7 +37,123 @@ tags:
     description: 灵感大厅上新（定时同步的上游中文提示词）
   - name: pose-library
     description: 站点姿势库：浏览、选用，管理员导入与图片同步
+  - name: video-transfers
+    description: 当前用户的视频搬运记录、分支参数与本地算法任务
 paths:
+  /video-transfers/capabilities:
+    get:
+      tags: [video-transfers]
+      summary: 检查视频搬运算法及服务器限制
+      description: 需要登录。返回两个分支的实际运行依赖可用性；依赖缺失时仍返回 200，分支 available 为 false 并附 reason。limits 是当前服务器配置，不保证所有媒体编码或水印都可处理。
+      responses:
+        "200":
+          description: 分支能力和处理限制
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Envelope" }
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/VideoTransferCapabilities" }
+        "401": { $ref: "#/components/responses/Error" }
+  /video-transfers:
+    get:
+      tags: [video-transfers]
+      summary: 分页列出当前用户的视频搬运记录
+      description: 按 updatedAt、id 降序返回。q 只搜索标题，不搜索原片名称；结果包含各分支当前任务状态。不同用户的记录隔离。
+      parameters:
+        - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+        - { in: query, name: pageSize, schema: { type: integer, minimum: 1, maximum: 100, default: 24 } }
+        - { in: query, name: q, schema: { type: string, maxLength: 240 }, description: 标题搜索关键词 }
+      responses:
+        "200":
+          description: 当前用户的记录分页
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Envelope" }
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/VideoTransferPage" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [video-transfers]
+      summary: 创建视频搬运记录
+      description: 创建当前用户独立记录，初始 revision 为 1。源资源必须属于当前用户且已完成视频上传。可先创建空记录；每用户最多 1000 条。请求最多 32 KiB，拒绝未知字段；与 PATCH 共用每用户每分钟 60 次写入限流。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VideoTransferCreateRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/VideoTransferRecord" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /video-transfers/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+    get:
+      tags: [video-transfers]
+      summary: 读取视频搬运记录及任务进度
+      description: 仅返回当前用户的记录，不存在或不属于当前用户时返回 404。响应 Cache-Control 为 no-store；可轮询 branches 中的进度、结果资源和处理摘要。
+      responses:
+        "200": { $ref: "#/components/responses/VideoTransferRecord" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [video-transfers]
+      summary: 按配置版本保存视频搬运参数
+      description: expectedRevision 必须等于当前 revision，成功后加 1，冲突返回 409。仅合并提交的配置字段，不能写任务状态或结果。处理期间不能更换源视频或修改运行分支参数；更换或清空源视频会重置两个分支，改变分支参数会清空该分支旧结果。请求最多 32 KiB，拒绝未知字段。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VideoTransferPatch" }
+      responses:
+        "200": { $ref: "#/components/responses/VideoTransferRecord" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /video-transfers/{id}/run:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+    post:
+      tags: [video-transfers]
+      summary: 将指定视频搬运分支加入任务队列
+      description: 使用已保存的该分支 settings，校验当前用户的记录、源资源、expectedRevision、能力与配额；成功后 revision 加 1 并返回 queued 分支及 taskId。该分支已有 queued 或 running 任务时返回 409。任务类型为 video_transfer；请求最多 32 KiB，拒绝未知字段，使用服务器任务创建限流。后续算法失败通过分支 status、error 报告。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VideoTransferRunRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/VideoTransferRecord" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /video-transfers/{id}/cancel:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+    post:
+      tags: [video-transfers]
+      summary: 取消记录中所有仍在排队或运行的分支
+      description: 仅能取消当前用户记录的任务。无需请求体或 expectedRevision；调用现有任务取消机制并停止算法进程组，返回刷新后的记录。没有活动任务时保持记录原状态；已完成结果保留。取消和进度更新不递增配置 revision。
+      responses:
+        "200": { $ref: "#/components/responses/VideoTransferRecord" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /admin/api-logs/{id}:
     get:
       tags: [admin]
@@ -3720,6 +3836,92 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /resources/uploads:
+    post:
+      tags: [resources]
+      summary: 开始分片上传并预留账号配额
+      description: 每片 8MiB；上传与完成操作刷新 90 分钟空闲有效期。purpose=video-transfer 且 kind=video 时免单文件大小限制，仍校验每日上传额度和存储容量，完成时探测真实视频。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileName, size]
+              properties:
+                fileName: { type: string, maxLength: 255 }
+                size: { type: integer, format: int64, minimum: 1 }
+                kind: { type: string }
+                purpose: { type: string, enum: [video-transfer] }
+                width: { type: integer }
+                height: { type: integer }
+                durationMs: { type: integer, format: int64 }
+                idempotencyKey: { type: string, description: 同一次文件上传跨会话重试保持相同值 }
+      responses:
+        "200":
+          description: 标准信封 data 为 uploadId、chunkSize、chunkCount
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /resources/uploads/{id}/chunks/{index}:
+    put:
+      tags: [resources]
+      summary: 上传一个二进制分片
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: path
+          name: index
+          required: true
+          schema: { type: integer, minimum: 0 }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /resources/uploads/{id}/complete:
+    post:
+      tags: [resources]
+      summary: 合并分片并保存资源
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 标准信封 data.resource 为已保存资源
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /resources/uploads/{id}:
+    delete:
+      tags: [resources]
+      summary: 取消上传并释放预留配额
+      description: 仅当前用户可取消自己的会话；会话已完成或过期时幂等成功。
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "404":
+          $ref: "#/components/responses/Error"
   /resources/access:
     post:
       tags: [resources]
@@ -4064,6 +4266,235 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
+    VideoTransferBranch:
+      type: string
+      enum: [fixed-r16, moving-v6]
+    VideoTransferROI:
+      type: object
+      additionalProperties: false
+      required: [x, y, width, height]
+      description: 原视频像素坐标中的矩形，使用整数像素。移动分支运行时必填，必须在视频范围内，并满足 capabilities.limits 的面积和单边上限。
+      properties:
+        x: { type: integer, minimum: 0 }
+        y: { type: integer, minimum: 0 }
+        width: { type: integer, minimum: 4 }
+        height: { type: integer, minimum: 4 }
+    VideoTransferSettingsPatch:
+      type: object
+      additionalProperties: false
+      description: 仅合并提交的非 null 字段；省略或 null 保持已有值，包括 roi 和 fixedRegions。fixedRegions 空数组清空区域，回到单角落模式。新分支默认时间为 0，workers 为 min(10, limits.maxWorkers)，固定分支 target 默认为 top-right。
+      properties:
+        target:
+          type: string
+          description: 固定分支未设置 fixedRegions 时必须为 top-left、top-right、bottom-left、bottom-right 之一；移动分支不使用此字段。
+        referenceSeconds:
+          type: number
+          minimum: 0
+          description: 移动水印参考帧在原视频中的绝对秒数，须早于原片结尾，可以位于处理区间之外。
+        roi: { $ref: "#/components/schemas/VideoTransferROI" }
+        fixedRegions:
+          type: array
+          maxItems: 4
+          description: 仅固定 R16 使用，区域在空间上不可重叠。非空时忽略旧 target、roi 和 referenceSeconds。运行范围须与至少一个区域的有效时间相交；无活动区域的内部时间窗口保留原画面。各区域使用原片同一参考身份。
+          items: { $ref: "#/components/schemas/VideoTransferFixedRegion" }
+        startSeconds: { type: number, minimum: 0, description: 处理开始位置，原视频绝对秒数 }
+        durationSeconds:
+          type: number
+          minimum: 0
+          description: 处理秒数；0 表示从 startSeconds 到视频结尾。超出服务器单次时长上限时拒绝，不自动截短。
+        workers: { type: integer, minimum: 1, maximum: 16, description: 一批的 worker 总预算，在并行片段间均分，受 limits.maxWorkers 限制 }
+    VideoTransferFixedRegion:
+      type: object
+      additionalProperties: false
+      required: [roi, referenceSeconds, startSeconds, durationSeconds]
+      properties:
+        roi: { $ref: "#/components/schemas/VideoTransferROI" }
+        referenceSeconds:
+          type: number
+          minimum: 0
+          description: 原视频绝对秒数，必须在本区域的有效时间范围内，含开始、不含结束；按原片帧率取整后也须位于该范围。
+        startSeconds: { type: number, minimum: 0, description: 本区域开始生效的原视频绝对秒数，包含该时刻 }
+        durationSeconds:
+          type: number
+          minimum: 0
+          description: 本区域有效秒数，结束时刻不包含在内；0 表示持续至原视频结尾。有效范围须包含至少 3 个实际视频帧。
+    VideoTransferSettings:
+      allOf:
+        - { $ref: "#/components/schemas/VideoTransferSettingsPatch" }
+        - type: object
+          required: [referenceSeconds, startSeconds, durationSeconds, workers]
+    VideoTransferBranchPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        settings: { $ref: "#/components/schemas/VideoTransferSettingsPatch" }
+    VideoTransferCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title: { type: string, maxLength: 240, description: 省略或去除首尾空白后为空时使用「新视频搬运」 }
+        sourceResourceId: { type: string, description: 当前用户已上传且 ready 的视频资源 ID；省略时创建空记录 }
+        sourceName: { type: string, maxLength: 240, description: 原片展示名称，不参与列表搜索 }
+        selectedBranch:
+          allOf:
+            - { $ref: "#/components/schemas/VideoTransferBranch" }
+          default: fixed-r16
+    VideoTransferPatch:
+      type: object
+      additionalProperties: false
+      required: [expectedRevision]
+      properties:
+        expectedRevision: { type: integer, format: int64, minimum: 1 }
+        title: { type: string, minLength: 1, maxLength: 240 }
+        sourceResourceId: { type: string, description: 指定当前用户源视频资源；空字符串清空源视频并重置分支 }
+        sourceName: { type: string, maxLength: 240 }
+        selectedBranch: { $ref: "#/components/schemas/VideoTransferBranch" }
+        branches:
+          type: object
+          additionalProperties: false
+          properties:
+            fixed-r16: { $ref: "#/components/schemas/VideoTransferBranchPatch" }
+            moving-v6: { $ref: "#/components/schemas/VideoTransferBranchPatch" }
+    VideoTransferRunRequest:
+      type: object
+      additionalProperties: false
+      required: [branch, expectedRevision]
+      properties:
+        branch: { $ref: "#/components/schemas/VideoTransferBranch" }
+        expectedRevision: { type: integer, format: int64, minimum: 1 }
+    VideoTransferNativeSummary:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean, description: 是否启用可用的本机加速内核 }
+        kernels: { type: array, items: { type: string } }
+        unavailableKernels: { type: array, items: { type: string } }
+        backgroundImplementation: { type: string }
+    VideoTransferSolverUsage:
+      type: object
+      required: [robustNativeFrames, robustNumpyFrames, robustFallbackFrames, affineFallbackFrames]
+      properties:
+        robustNativeFrames: { type: integer, minimum: 0 }
+        robustNumpyFrames: { type: integer, minimum: 0 }
+        robustFallbackFrames: { type: integer, minimum: 0 }
+        affineFallbackFrames: { type: integer, minimum: 0 }
+    VideoTransferSummary:
+      type: object
+      required: [frames, trackedFrames, untrackedFrames, trackingCoverage, changedPixels, temporalRecoveredPixels, inversePixels, spatialFallbackPixels, calibratedInversePixels, limitations]
+      description: 成功输出的算法摘要。移动分支成功不表示每帧均被跟踪；未覆盖帧保留原图。各恢复方法的像素计数可能重叠，不应相加推导总处理像素；非对应分支的计数为 0。
+      properties:
+        frames: { type: integer, minimum: 1, description: 输出帧总数 }
+        trackedFrames: { type: integer, minimum: 0, description: 移动分支接受跟踪的帧数 }
+        untrackedFrames: { type: integer, minimum: 0, description: 移动分支未覆盖并保留原图的帧数 }
+        trackingCoverage: { type: number, minimum: 0, maximum: 1, description: 移动分支 trackedFrames / frames；固定分支为 0 }
+        changedPixels: { type: integer, format: int64, minimum: 0 }
+        temporalRecoveredPixels: { type: integer, format: int64, minimum: 0 }
+        inversePixels: { type: integer, format: int64, minimum: 0 }
+        spatialFallbackPixels: { type: integer, format: int64, minimum: 0 }
+        calibratedInversePixels: { type: integer, format: int64, minimum: 0 }
+        limitations: { type: array, maxItems: 20, items: { type: string, maxLength: 300 }, description: 算法能力边界和此次处理说明，应展示给用户 }
+        native: { $ref: "#/components/schemas/VideoTransferNativeSummary" }
+        solverUsage: { $ref: "#/components/schemas/VideoTransferSolverUsage" }
+    VideoTransferBranchState:
+      type: object
+      required: [settings, status, progress, segments]
+      properties:
+        settings: { $ref: "#/components/schemas/VideoTransferSettings" }
+        status: { type: string, enum: [idle, queued, running, succeeded, failed, cancelled] }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        stage: { type: string }
+        error: { type: string, description: 失败原因，不包含服务器文件路径 }
+        outputResourceId: { type: string, description: 单段成功输出资源 ID；多段从 segments 读取独立输出 }
+        elapsedSeconds: { type: number, minimum: 0 }
+        taskId: { type: string }
+        summary: { $ref: "#/components/schemas/VideoTransferSummary" }
+        segments: { type: array, items: { $ref: "#/components/schemas/VideoTransferSegment" } }
+    VideoTransferSegment:
+      type: object
+      required: [id, index, startSeconds, durationSeconds, status, progress]
+      properties:
+        id: { type: string, example: segment-1 }
+        index: { type: integer, minimum: 0 }
+        startSeconds: { type: number, minimum: 0, description: 原片绝对秒数 }
+        durationSeconds: { type: number, exclusiveMinimum: true, minimum: 0, maximum: 10 }
+        status: { type: string, enum: [idle, queued, running, succeeded, failed, cancelled] }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        stage: { type: string }
+        error: { type: string }
+        elapsedSeconds: { type: number, minimum: 0 }
+        outputResourceId: { type: string, description: 片段输出的当前用户资源 ID，部分失败时仍保留成功段 }
+        summary: { $ref: "#/components/schemas/VideoTransferSummary" }
+    VideoTransferRecord:
+      type: object
+      required: [id, title, selectedBranch, branches, revision, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        title: { type: string, maxLength: 240 }
+        sourceResourceId: { type: string }
+        sourceName: { type: string, maxLength: 240 }
+        sourceWidth: { type: integer, minimum: 1 }
+        sourceHeight: { type: integer, minimum: 1 }
+        sourceDuration: { type: number, minimum: 0, description: 资源记录中的原片时长，单位秒；执行时再次探测实际媒体 }
+        sourceFrameRate: { type: number, minimum: 0 }
+        sourceFrames: { type: integer, minimum: 0 }
+        selectedBranch: { $ref: "#/components/schemas/VideoTransferBranch" }
+        branches:
+          type: object
+          required: [fixed-r16, moving-v6]
+          additionalProperties: false
+          properties:
+            fixed-r16: { $ref: "#/components/schemas/VideoTransferBranchState" }
+            moving-v6: { $ref: "#/components/schemas/VideoTransferBranchState" }
+        revision: { type: integer, format: int64, minimum: 1, description: 配置版本；PATCH 和 run 递增，任务进度或终态同步不递增 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    VideoTransferPage:
+      type: object
+      required: [records, total, page, pageSize, hasMore]
+      properties:
+        records: { type: array, items: { $ref: "#/components/schemas/VideoTransferRecord" } }
+        total: { type: integer, format: int64, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        hasMore: { type: boolean }
+    VideoTransferLimits:
+      type: object
+      required: [maxSourceBytes, maxSourceDurationSeconds, maxDurationSeconds, maxPixels, maxWorkers, maxMovingRoiPixels, maxMovingRoiDimension, segmentDurationSeconds, maxConcurrentSegments]
+      description: 当前服务器生效的处理上限。客户端应读取本接口，不硬编码示例值；算法仍会校验媒体和移动跟踪上下文等额外边界。
+      properties:
+        maxSourceBytes: { type: integer, format: int64, minimum: 0, example: 0, description: 0 表示不限制单文件大小 }
+        maxSourceDurationSeconds: { type: number, minimum: 0, example: 0, description: 0 表示不限制原片时长 }
+        maxDurationSeconds: { type: number, minimum: 0, example: 0, description: 0 表示不限制整次处理时长 }
+        maxPixels: { type: integer, minimum: 1, example: 8294400, description: 原片宽高乘积上限，处理保持原始尺寸 }
+        maxWorkers: { type: integer, minimum: 1, maximum: 16, example: 16 }
+        maxMovingRoiPixels: { type: integer, minimum: 1, example: 196608 }
+        maxMovingRoiDimension: { type: integer, minimum: 1, example: 1024 }
+        segmentDurationSeconds: { type: number, enum: [10] }
+        maxConcurrentSegments: { type: integer, minimum: 1, maximum: 4, example: 2 }
+    VideoTransferCapabilities:
+      type: object
+      required: [branches, limits]
+      properties:
+        branches:
+          type: array
+          items:
+            type: object
+            required: [id, available]
+            properties:
+              id: { $ref: "#/components/schemas/VideoTransferBranch" }
+              available: { type: boolean }
+              reason: { type: string, description: 分支不可用的安全原因，不暴露服务器路径 }
+        limits: { $ref: "#/components/schemas/VideoTransferLimits" }
+    VideoTransferRecordEnvelope:
+      allOf:
+        - { $ref: "#/components/schemas/Envelope" }
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [record]
+              properties:
+                record: { $ref: "#/components/schemas/VideoTransferRecord" }
     APICallGenerationContent:
       type: object
       required: [prompt, references, source, incomplete]
@@ -4998,6 +5429,11 @@ components:
                 - model_catalog_mismatch
                 - invalid_model_selection
   responses:
+    VideoTransferRecord:
+      description: 业务成功信封，data.record 为当前用户的视频搬运记录
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/VideoTransferRecordEnvelope" }
     ModelQuote:
       description: 当前参数对应的费用报价，位于信封 data.quote
       content:

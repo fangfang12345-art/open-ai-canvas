@@ -20,6 +20,8 @@ export const frFR: Messages = {
     },
     nav: {
         tools: {
+            remix: "Remix vidéo",
+            videoTransfer: "Transfert vidéo",
             create: "Créer",
             projects: "Courts métrages",
             canvas: "Canevas",

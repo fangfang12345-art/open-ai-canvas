@@ -5,7 +5,7 @@ import { ConfigProvider } from "antd";
 import { AppWorkspaceShell } from "@/components/layout/app-top-nav";
 import { useAgentPanelDock } from "@/components/canvas/use-agent-panel-dock";
 import { cn } from "@/lib/utils";
-import { isSpatialWorkbenchPath } from "@/lib/workspace-routes";
+import { isCanvasEditorPath, isSpatialWorkbenchPath } from "@/lib/workspace-routes";
 import { getWorkspaceAntThemeConfig } from "@/lib/app-theme";
 import { useGlobalAgentStore } from "@/stores/use-global-agent-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -20,7 +20,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     const { pathname } = useLocation();
     const adminWorkspace = pathname === "/admin" || pathname.startsWith("/admin/");
     const spatialWorkbench = isSpatialWorkbenchPath(pathname);
-    const canvasEditor = /^\/canvas\/[^/]+(?:\/|$)/.test(pathname);
+    const canvasEditor = isCanvasEditorPath(pathname);
     const productWorkspace = !adminWorkspace && !canvasEditor;
     const userId = useUserStore((state) => state.user?.id);
     // Agent 停靠在画布右侧时，工作区让出同样的宽度，画布、顶栏和角落控件都不被遮挡。

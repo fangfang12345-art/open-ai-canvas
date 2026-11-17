@@ -641,6 +641,78 @@ describe("定向保存与旧 journal 的真实同步集成", () => {
         expect(fixture.writes[1].mutationId).not.toBe(fixture.writes[0].mutationId);
     });
 
+    test("新画布媒体绑定拒绝且远端404时，以当前素材绑定替换首次创建journal", async () => {
+        fixture.manualTimers = true;
+        const project = { ...base(), id: "new-media-canvas", revision: 0 };
+        useCanvasStore.setState({ projects: [project] });
+        fixture.errors.set(`${project.id}:1`, new ApiError("media pending", { status: 400, reason: "canvas_media_assets_pending" }));
+        fixture.postHook = (_id: string, _request: unknown, count: number) => {
+            if (count !== 1) return;
+            const current = useCanvasStore.getState().openProject(project.id);
+            useCanvasStore.setState({ projects: [{ ...current, title: "Edited during recovery", nodes: current.nodes.map((node: CanvasProject["nodes"][number]) => ({ ...node, metadata: { ...node.metadata, assetId: "registered-asset" } })) }] });
+            fixture.readHook = () => {
+                throw new ApiError("not found", { status: 404 });
+            };
+        };
+        await sync.saveRemoteUserDataNow(project.id);
+        const writes = fixture.writesById.get(project.id);
+        expect(writes).toHaveLength(2);
+        expect(writes[0].operations.find((operation: { type: string }) => operation.type === "create_node").node.metadata.assetId).toBe("asset");
+        expect(writes[1].operations.find((operation: { type: string }) => operation.type === "create_node").node.metadata.assetId).toBe("registered-asset");
+        expect(writes[1].mutationId).not.toBe(writes[0].mutationId);
+        expect(writes[1].baseRevision).toBeUndefined();
+        expect(fixture.remoteById.get(project.id)).toMatchObject({ title: "Edited during recovery", revision: 1 });
+        expect(journal()).toEqual([]);
+        expect(useSyncProgressStore.getState().syncingProjects[project.id]).toMatchObject({ phase: "done", pendingChanges: 0 });
+    });
+
+    test("已有画布媒体拒绝后远端404不能重新创建已删除画布", async () => {
+        fixture.manualTimers = true;
+        edit({ title: "Retain local edit" });
+        fixture.errors.set("canvas:1", new ApiError("media pending", { status: 400, reason: "canvas_media_assets_pending" }));
+        fixture.readHook = () => {
+            throw new ApiError("not found", { status: 404 });
+        };
+        await expect(sync.saveRemoteUserDataNow("canvas")).rejects.toThrow("not found");
+        expect(fixture.writes).toHaveLength(1);
+        expect(journal()[0].request).toEqual(fixture.writes[0]);
+        expect(live().title).toBe("Retain local edit");
+    });
+
+    test("新画布媒体拒绝后的未知网络结果保留原journal", async () => {
+        fixture.manualTimers = true;
+        const project = { ...base(), id: "new-media-canvas", revision: 0 };
+        useCanvasStore.setState({ projects: [project] });
+        fixture.errors.set(`${project.id}:1`, new ApiError("media pending", { status: 400, reason: "canvas_media_assets_pending" }));
+        fixture.readHook = () => {
+            throw new ApiError("offline", { status: 503, retryable: true });
+        };
+        await expect(sync.saveRemoteUserDataNow(project.id)).rejects.toThrow("offline");
+        expect(fixture.writes).toHaveLength(1);
+        expect(journal()[0].request).toEqual(fixture.writes[0]);
+        expect(fixture.remoteById.has(project.id)).toBe(false);
+    });
+
+    test("新画布恢复journal落盘失败仍保留原请求和本地内容", async () => {
+        fixture.manualTimers = true;
+        const project = { ...base(), id: "new-media-canvas", revision: 0 };
+        useCanvasStore.setState({ projects: [project] });
+        fixture.errors.set(`${project.id}:1`, new ApiError("media pending", { status: 400, reason: "canvas_media_assets_pending" }));
+        fixture.postHook = () => {
+            fixture.readHook = () => {
+                throw new ApiError("not found", { status: 404 });
+            };
+            fixture.saveHook = (key: string) => {
+                if (key === journalKey) throw new Error("disk full");
+            };
+        };
+        await expect(sync.saveRemoteUserDataNow(project.id)).rejects.toThrow("disk full");
+        expect(fixture.writes).toHaveLength(1);
+        expect(journal()[0].request).toEqual(fixture.writes[0]);
+        expect(useCanvasStore.getState().openProject(project.id)).toEqual(project);
+        expect(fixture.remoteById.has(project.id)).toBe(false);
+    });
+
     test("云端恢复落盘期间的新编辑继续保存，不被旧恢复结果覆盖", async () => {
         fixture.manualTimers = true;
         delete fixture.remote.nodes[0].metadata.assetId;

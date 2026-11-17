@@ -9,6 +9,7 @@ import (
 
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/repository"
+	"yingce/backend/internal/videotransfer"
 
 	"gorm.io/gorm"
 )
@@ -525,6 +526,9 @@ func (s *Service) createTextReplayTask(userID string, req CreateTaskRequest, nor
 // validateTaskType 是任务进入队列前的边界校验。视频任务允许携带具体操作后缀，
 // 其他任务类型必须是已实现的执行分支，避免未知类型落入假成功工作流。
 func validateTaskType(taskType string) error {
+	if taskType == videotransfer.TaskType {
+		return BadAuthRequest("视频搬运任务必须从对应记录启动")
+	}
 	switch taskType {
 	case "text", "canvas_text", "canvas_image", "canvas_video", "canvas_audio":
 		return nil

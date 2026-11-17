@@ -65,6 +65,8 @@ function buildNav(features: FeatureAvailability, t: TFunction): { groups: Worksp
                 { ...toolItem("create", "/", t), id: "home", title: t("nav.sidebar.home") },
                 { ...toolItem("assets", "/assets", t), title: t("nav.sidebar.assets") },
                 { ...toolItem("canvas", "/canvas", t), title: t("nav.sidebar.canvas") },
+                toolItem("remix", "/remix", t),
+                toolItem("video-transfer", "/video-transfer", t),
                 ...(features.shortDramaEnabled ? [{ ...toolItem("projects", "/projects", t), title: t("nav.sidebar.projects") }] : []),
                 ...(features.ecommerceEnabled ? [{ id: "ecommerce", title: t("nav.sidebar.ecommerce"), icon: ShoppingBag, to: "/ecommerce" }] : []),
             ],

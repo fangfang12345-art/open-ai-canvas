@@ -283,6 +283,31 @@ func RegisterUserDataRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"resource": resource})
 	})
+	r.POST("/resources/import-youtube", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		policy, available := loadRuntimePolicy(c, svc)
+		if !available || !enforceRateLimit(c, "resources-import:"+user.ID, policy.Request.ResourceImportPerMinute, time.Minute) {
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
+		var req struct {
+			URL string `json:"url"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, errors.New("视频链接请求格式无效"))
+			return
+		}
+		result, err := svc.ImportYouTubeVideo(c.Request.Context(), user.ID, req.URL, c.GetHeader("X-Idempotency-Key"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, result)
+	})
 	r.GET("/resources/:id", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

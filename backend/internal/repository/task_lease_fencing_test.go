@@ -18,7 +18,7 @@ func TestTaskLeaseFencesExpiredAndReclaimedWriters(t *testing.T) {
 	if err := db.AutoMigrate(&model.Task{}, &model.Result{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&model.Task{ID: "task", UserID: "user", Status: model.TaskStatusQueued}).Error; err != nil {
+	if err := db.Create(&model.Task{ID: "task", UserID: "user", Type: "video_transfer", Status: model.TaskStatusQueued}).Error; err != nil {
 		t.Fatal(err)
 	}
 	repo := New(db)
@@ -40,6 +40,9 @@ func TestTaskLeaseFencesExpiredAndReclaimedWriters(t *testing.T) {
 		t.Fatalf("reclaim: %v %v", current, err)
 	}
 	for _, owner := range []string{old.LeaseOwner, ""} {
+		if err := repo.UpdateVideoTransferTaskProgress(old.ID, owner, "stale segment", 90, "{}"); !errors.Is(err, ErrTaskStateConflict) {
+			t.Fatalf("stale segment progress: %v", err)
+		}
 		if err := repo.UpdateTaskProgressForLease(old.ID, owner, "stale", 90); !errors.Is(err, ErrTaskStateConflict) {
 			t.Fatalf("stale progress: %v", err)
 		}
@@ -62,6 +65,9 @@ func TestTaskLeaseFencesExpiredAndReclaimedWriters(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := repo.UpdateTaskProgressForLease(current.ID, current.LeaseOwner, "current", 60); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateVideoTransferTaskProgress(current.ID, current.LeaseOwner, "current segment", 60, "{}"); err != nil {
 		t.Fatal(err)
 	}
 	current.Status = model.TaskStatusSucceeded

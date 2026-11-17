@@ -20,6 +20,8 @@ export const deDE: Messages = {
     },
     nav: {
         tools: {
+            remix: "Video-Remix",
+            videoTransfer: "Videoübertragung",
             create: "Erstellen",
             projects: "Kurzserien",
             canvas: "Canvas",

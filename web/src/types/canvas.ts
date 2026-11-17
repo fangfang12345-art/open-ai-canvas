@@ -291,6 +291,11 @@ export type CanvasNodeMetadata = {
     pluginData?: Record<string, unknown>;
     importSource?:
         | {
+              provider: "youtube";
+              videoId: string;
+              url: string;
+          }
+        | {
               provider: "libtv";
               projectUuid: string;
               nodeKey: string;

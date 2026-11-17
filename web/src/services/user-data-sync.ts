@@ -1388,6 +1388,41 @@ async function preserveSyncRecovery(identity: string, value: object) {
     }
 }
 
+async function replaceRejectedNewCanvasMutation(id: string, rejected: PendingCanvasMutation) {
+    // Only a rejected first create can be rebuilt after a confirmed 404.
+    // Existing canvases and partially committed batches must never be recreated.
+    if (rejected.baseline || acknowledgedProjects.has(id) || rejected.request.baseRevision !== undefined || !rejected.request.operations.some((operation) => operation.type === "create_canvas" && operation.id === id)) return false;
+    const epoch = sessionEpoch;
+    const scope = getActiveUserScope();
+    const ensureSession = () => {
+        if (epoch !== sessionEpoch || scope !== getActiveUserScope()) throw new Error("账号已切换，已停止画布恢复");
+    };
+    const local = useCanvasStore.getState().openProject(id);
+    if (!local || local.revision !== 0) return false;
+    const prepared = await ensureRemoteResourceReferences(local, new Map());
+    ensureSession();
+    const replacement: PendingCanvasMutation = {
+        projectId: id,
+        request: { mutationId: newCanvasMutationId(), operations: buildCanvasOperations(undefined, prepared) },
+        prepared,
+        localPrepared: local,
+        editVersions: canvasEditLeases.versions(id),
+        editSession: canvasEditLeases.session(),
+        createdAt: new Date().toISOString(),
+    };
+    pendingCanvasMutations.set(id, replacement);
+    try {
+        // Replace durably without a journal gap; a failed write keeps the old request.
+        await persistPendingCanvasMutationJournal();
+    } catch (error) {
+        if (epoch === sessionEpoch && pendingCanvasMutations.get(id) === replacement) pendingCanvasMutations.set(id, rejected);
+        throw error;
+    }
+    ensureSession();
+    syncQueued = true;
+    return true;
+}
+
 async function reconcileCanvasLocalEdits(id: string, rejected?: PendingCanvasMutation) {
     const epoch = sessionEpoch;
     const scope = getActiveUserScope();
@@ -1797,7 +1832,13 @@ async function saveRemoteUserDataBatch(uploaded: Map<string, string>, options: {
                         requireCurrentSession();
                         rebindInconsistentCanvasAssets(assets, new Set([source.id]));
                     }
-                    await reconcileCanvasLocalEdits(source.id, rejected);
+                    try {
+                        await reconcileCanvasLocalEdits(source.id, rejected);
+                    } catch (recoveryError) {
+                        requireCurrentSession();
+                        const newCanvasRejected = error.rejection.reason === "canvas_media_assets_pending" && recoveryError instanceof ApiError && recoveryError.status === 404;
+                        if (!newCanvasRejected || !(await replaceRejectedNewCanvasMutation(source.id, rejected))) throw recoveryError;
+                    }
                     reconciled = true;
                     continue;
                 } catch (recoveryError) {

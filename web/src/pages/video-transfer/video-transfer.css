@@ -1,0 +1,657 @@
+.video-transfer-list-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 20px;
+    color: var(--text-secondary);
+    font-size: var(--fs-caption);
+}
+
+.video-transfer-list-toolbar .ant-input-search {
+    max-width: 340px;
+}
+.video-transfer-record-name {
+    display: grid;
+    gap: 5px;
+    min-width: 190px;
+}
+.video-transfer-record-name button {
+    width: fit-content;
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    color: var(--text-primary);
+    text-align: left;
+    font-weight: 500;
+}
+.video-transfer-record-name > span {
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-size: var(--fs-caption);
+}
+.video-transfer-table-status {
+    display: grid;
+    gap: 5px;
+    font-size: var(--fs-caption);
+}
+.video-transfer-table-status > span {
+    display: flex;
+    gap: 7px;
+    align-items: center;
+}
+.video-transfer-table-status > span > span:nth-child(2) {
+    width: 26px;
+    color: var(--text-secondary);
+}
+.video-transfer-status-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: var(--radius-full, 999px);
+    background: var(--text-tertiary);
+}
+.video-transfer-status-dot.is-running,
+.video-transfer-status-dot.is-queued {
+    background: var(--status-loading);
+}
+.video-transfer-status-dot.is-failed {
+    background: var(--status-error);
+}
+.video-transfer-status-dot.is-succeeded {
+    background: var(--status-success);
+}
+.video-transfer-create-form {
+    display: grid;
+    gap: 10px;
+    padding-top: 10px;
+}
+.video-transfer-create-form > span {
+    margin-top: 12px;
+}
+.video-transfer-hint {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--fs-caption);
+    line-height: 1.65;
+}
+.video-transfer-branch-switch,
+.video-transfer-mode-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+    padding: 4px;
+    border: 1px solid var(--border);
+    background: var(--surface-hover);
+    border-radius: var(--control-radius);
+}
+.video-transfer-branch-switch button,
+.video-transfer-mode-switch button,
+.video-transfer-region-list > button {
+    min-height: 34px;
+    padding: 7px 6px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: var(--fs-caption);
+    cursor: pointer;
+}
+.video-transfer-branch-switch button[aria-pressed="true"],
+.video-transfer-mode-switch button[aria-pressed="true"],
+.video-transfer-region-list > button[aria-pressed="true"] {
+    border-color: var(--control-selected-border);
+    background: var(--control-selected-bg);
+    color: var(--control-selected-fg);
+}
+.video-transfer-branch-switch button:disabled,
+.video-transfer-mode-switch button:disabled,
+.video-transfer-region-list > button:disabled {
+    cursor: default;
+    opacity: 0.65;
+}
+.video-transfer-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 240px;
+    color: var(--text-secondary);
+}
+.video-transfer-canvas-page {
+    min-height: 0;
+    overflow: hidden;
+}
+.video-transfer-editor {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+.video-transfer-editor-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 64px;
+    flex-shrink: 0;
+    padding: 10px 18px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+.video-transfer-editor-title {
+    display: grid;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+.video-transfer-editor-title > button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+.video-transfer-editor-title strong {
+    min-width: 0;
+    text-align: left;
+    font-size: var(--fs-body);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.video-transfer-editor-title > button > .anticon {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    font-size: var(--fs-caption);
+}
+.video-transfer-editor-title > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-tertiary);
+    font-size: var(--fs-label);
+}
+.video-transfer-editor-title .ant-input {
+    max-width: 420px;
+}
+.video-transfer-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.video-transfer-editor-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    flex: 1;
+    overflow: hidden;
+}
+.video-transfer-editor-body.has-inspector {
+    grid-template-columns: minmax(0, 1fr) 336px;
+}
+.video-transfer-viewport {
+    position: relative;
+    min-width: 0;
+    min-height: 360px;
+    overflow: hidden;
+    touch-action: none;
+    background-color: var(--background);
+    background-image: radial-gradient(var(--border) 1px, transparent 1px);
+    background-size: 20px 20px;
+    cursor: grab;
+}
+.video-transfer-viewport.is-panning {
+    cursor: grabbing;
+}
+.video-transfer-viewport:focus-visible,
+.video-transfer-record-name button:focus-visible,
+.video-transfer-editor-title button:focus-visible,
+.video-transfer-branch-switch button:focus-visible,
+.video-transfer-mode-switch button:focus-visible,
+.video-transfer-region-list > button:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 2px;
+}
+.video-transfer-graph {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+}
+.video-transfer-edges {
+    position: absolute;
+    inset: 0;
+    overflow: visible;
+    pointer-events: none;
+}
+.video-transfer-edges path {
+    stroke: var(--border);
+    stroke-width: 2;
+    fill: none;
+}
+.video-transfer-edges circle {
+    stroke: var(--text-tertiary);
+    stroke-width: 1.5;
+    fill: var(--surface);
+}
+.video-transfer-edges .is-selected path {
+    stroke: var(--workspace-accent);
+    opacity: 0.6;
+}
+.video-transfer-edges .is-selected circle {
+    stroke: var(--workspace-accent);
+}
+.video-transfer-node {
+    position: absolute;
+    border: 1px solid var(--border);
+    border-radius: var(--control-radius);
+    background: var(--surface);
+    color: var(--text-primary);
+    box-shadow: var(--elevation-card);
+    cursor: default;
+    overflow: hidden;
+}
+.video-transfer-node > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 13px 15px;
+    border-bottom: 1px solid var(--border);
+}
+.video-transfer-node > header > strong {
+    font-size: var(--fs-body);
+    font-weight: 600;
+}
+.video-transfer-node-kind {
+    font-size: var(--fs-label);
+    color: var(--text-tertiary);
+}
+.video-transfer-node-body {
+    display: grid;
+    gap: 12px;
+    padding: 14px 15px;
+    font-size: var(--fs-ui);
+}
+.video-transfer-node-body > p {
+    margin: 0;
+}
+.video-transfer-node-video {
+    display: block;
+    width: 100%;
+    height: 152px;
+    object-fit: contain;
+    background: var(--background);
+}
+.video-transfer-source .video-transfer-node-video {
+    height: 160px;
+}
+.video-transfer-result-video {
+    height: 202px;
+}
+.video-transfer-source-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 160px;
+    gap: 10px;
+    background: var(--surface-hover);
+}
+.video-transfer-source-empty > span {
+    font-size: var(--fs-body);
+}
+.video-transfer-source-empty > p {
+    font-size: var(--fs-caption);
+    color: var(--text-secondary);
+}
+.video-transfer-source-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-ui);
+}
+.video-transfer-algorithm {
+    border-color: var(--control-selected-border);
+}
+.video-transfer-algorithm.is-selected {
+    border-color: var(--workspace-accent);
+    box-shadow:
+        var(--elevation-card),
+        0 0 0 1px var(--workspace-accent);
+}
+.video-transfer-algorithm.is-selected > header {
+    background: var(--control-selected-bg);
+}
+.video-transfer-status {
+    font-size: var(--fs-label);
+    color: var(--text-secondary);
+}
+.video-transfer-status.is-failed {
+    color: var(--status-error);
+}
+.video-transfer-status.is-succeeded {
+    color: var(--status-success);
+}
+.video-transfer-result-empty {
+    display: grid;
+    align-content: center;
+    gap: 10px;
+    min-height: 190px;
+    padding: 24px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: var(--fs-ui);
+}
+.video-transfer-result-empty p {
+    margin: 0;
+    font-size: var(--fs-caption);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+.video-transfer-node-body > .video-transfer-error-text,
+.video-transfer-result-empty > .video-transfer-error-text {
+    color: var(--status-error);
+    overflow-wrap: anywhere;
+}
+.video-transfer-viewport-help {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    pointer-events: none;
+    color: var(--text-tertiary);
+    font-size: var(--fs-label);
+}
+.video-transfer-viewport-controls {
+    position: absolute;
+    right: 16px;
+    bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--control-radius);
+    box-shadow: var(--elevation-card);
+}
+.video-transfer-viewport-controls > span {
+    min-width: 40px;
+    text-align: center;
+    font-size: var(--fs-caption);
+    color: var(--text-secondary);
+}
+.video-transfer-inspector {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 20px 18px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+}
+.video-transfer-inspector-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.video-transfer-inspector-heading > h2 {
+    font-size: var(--fs-body);
+    font-weight: 600;
+}
+.video-transfer-inspector-heading > span {
+    color: var(--text-tertiary);
+    font-size: var(--fs-label);
+}
+.video-transfer-settings {
+    display: grid;
+    gap: 13px;
+    min-width: 0;
+    margin: 0;
+    padding: 16px 0 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+}
+.video-transfer-settings > legend {
+    padding: 0 7px 0 0;
+    color: var(--text-primary);
+    font-size: var(--fs-ui);
+    font-weight: 500;
+}
+.video-transfer-settings label {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: var(--fs-caption);
+}
+.video-transfer-settings .ant-input-number,
+.video-transfer-settings .ant-select {
+    width: 100%;
+}
+.video-transfer-time-inputs,
+.video-transfer-roi-inputs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.video-transfer-region-list,
+.video-transfer-region-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: var(--fs-caption);
+}
+.video-transfer-region-heading {
+    justify-content: space-between;
+}
+.video-transfer-roi {
+    display: grid;
+    gap: 8px;
+}
+.video-transfer-roi-frame {
+    position: relative;
+    overflow: hidden;
+    background: var(--background);
+    border-radius: var(--control-radius);
+}
+.video-transfer-roi-frame > video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.video-transfer-roi-overlay {
+    position: absolute;
+    inset: 0;
+    cursor: crosshair;
+    touch-action: none;
+}
+.video-transfer-roi-overlay[data-disabled="true"] {
+    cursor: default;
+}
+.video-transfer-roi-box {
+    position: absolute;
+    pointer-events: none;
+    border: 2px solid var(--workspace-accent);
+    background: var(--workspace-accent-soft);
+    box-shadow: 0 0 0 1px var(--surface);
+}
+.video-transfer-run-state {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface-hover);
+    border-radius: var(--control-radius);
+    font-size: var(--fs-caption);
+}
+.video-transfer-run-state > div:first-child {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.video-transfer-run-state strong {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+.video-transfer-run-state > div:first-child > span:last-child:not(.video-transfer-status-dot) {
+    margin-left: auto;
+    color: var(--text-secondary);
+}
+.video-transfer-run-state > p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+.video-transfer-run-state > p.video-transfer-error-text {
+    color: var(--status-error);
+}
+.video-transfer-run-actions {
+    display: grid;
+    gap: 10px;
+    margin-top: auto;
+}
+.video-transfer-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 18px;
+    background: var(--surface-active);
+    color: var(--text-secondary);
+    font-size: var(--fs-caption);
+    border-bottom: 1px solid var(--border);
+}
+.video-transfer-banner.is-error {
+    color: var(--status-error);
+}
+.video-transfer-banner > span {
+    overflow-wrap: anywhere;
+}
+.video-transfer-banner > button {
+    flex-shrink: 0;
+}
+.video-transfer-preview-video {
+    display: block;
+    width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+    background: var(--background);
+    border-radius: var(--control-radius);
+}
+.video-transfer-result-summary {
+    display: grid;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: var(--fs-caption);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+.video-transfer-result-summary > p,
+.video-transfer-result-summary > ul {
+    margin: 0;
+}
+.video-transfer-result-summary > ul {
+    padding-left: 18px;
+}
+.video-transfer-preview-video + .video-transfer-result-summary {
+    margin-top: 16px;
+}
+
+@media (max-width: 1100px) {
+    .video-transfer-viewport-help {
+        bottom: 62px;
+    }
+}
+
+@media (max-width: 767px) {
+    .video-transfer-list-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    .video-transfer-list-toolbar .ant-input-search {
+        max-width: none;
+    }
+    .video-transfer-editor-header {
+        gap: 7px;
+        padding: 10px;
+    }
+    .video-transfer-header-actions {
+        gap: 5px;
+    }
+    .video-transfer-header-actions .ant-btn {
+        padding-inline: 8px;
+    }
+    .video-transfer-editor-body.has-inspector {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(300px, 48%) minmax(0, 1fr);
+    }
+    .video-transfer-viewport {
+        min-height: 280px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        cursor: default;
+    }
+    .video-transfer-graph {
+        position: relative;
+        display: grid;
+        gap: 24px;
+        width: 100% !important;
+        height: auto !important;
+        padding: 20px 16px;
+        transform: none !important;
+    }
+    .video-transfer-node {
+        position: relative;
+        top: auto !important;
+        left: auto !important;
+        width: 100% !important;
+    }
+    .video-transfer-edges,
+    .video-transfer-viewport-help,
+    .video-transfer-viewport-controls {
+        display: none;
+    }
+    .video-transfer-inspector {
+        border-left: 0;
+        border-top: 1px solid var(--border);
+        padding: 16px;
+    }
+    .video-transfer-branch-switch,
+    .video-transfer-mode-switch,
+    .video-transfer-settings .video-transfer-time-inputs,
+    .video-transfer-settings .video-transfer-roi-inputs {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .video-transfer-banner {
+        align-items: flex-start;
+        padding-inline: 12px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .video-transfer-canvas-page .ant-progress-bg {
+        transition: none;
+    }
+}

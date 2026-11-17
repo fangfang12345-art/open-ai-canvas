@@ -21,6 +21,8 @@ export const zhCN = {
     },
     nav: {
         tools: {
+            remix: "二创短视频",
+            videoTransfer: "视频搬运",
             create: "创作",
             projects: "短剧创作",
             canvas: "画布",

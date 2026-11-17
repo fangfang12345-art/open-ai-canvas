@@ -28,6 +28,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
 import type { CanvasHistorySnapshot } from "./use-canvas-history";
 import { trackSiteTrafficAction } from "@/services/site-traffic";
+import { createRemixDraft, forgetRemixCanvas, isRemixCanvas, remixCanvasPath } from "@/lib/canvas/remix-workspace";
 
 type UseCanvasProjectLifecycleOptions = {
     projectId: string;
@@ -184,7 +185,10 @@ export function useCanvasProjectLifecycle({
             const loadedProject = await waitForCanvasSync(loadCanvasProjectForEditing(projectId, { onLoad: applyRestoredProject }));
             if (cancelled) return;
             if (!loadedProject) {
-                if (!cachedProject) navigate("/canvas", { replace: true });
+                if (!cachedProject) {
+                    if (isRemixCanvas(projectId)) forgetRemixCanvas(projectId);
+                    navigate(isRemixCanvas(projectId) ? "/remix" : "/canvas", { replace: true });
+                }
                 return;
             }
             const project = useCanvasStore.getState().projects.find((p) => p.id === projectId) || loadedProject;
@@ -429,9 +433,14 @@ export function useCanvasProjectLifecycle({
 
     const createAndOpenProject = useCallback(() => {
         trackSiteTrafficAction("new_canvas");
+        if (isRemixCanvas(projectId)) {
+            const id = createRemixDraft();
+            navigate(remixCanvasPath(id), { state: canvasDraftNavigationState(id) });
+            return;
+        }
         const id = useCanvasStore.getState().createDraftProject(translate("canvasPage.lifecycle.defaultCanvasName", { index: useCanvasStore.getState().projects.length + 1 }));
         navigate(`/canvas/${id}`, { state: canvasDraftNavigationState(id) });
-    }, [message, navigate]);
+    }, [message, navigate, projectId]);
 
     const deleteCurrentProject = useCallback(async () => {
         const drawingIds = nodesRef.current.flatMap((node) => (node.type === "drawing" && node.metadata?.drawingId ? [node.metadata.drawingId] : []));
@@ -445,7 +454,8 @@ export function useCanvasProjectLifecycle({
             void Promise.all(drawingIds.map((drawingId) => removeCanvasDrawing(projectId, drawingId))).catch(() => message.warning(translate("canvasPage.lifecycle.drawingCacheCleanupFailed")));
         }
         cleanupAssetImages();
-        navigate("/canvas");
+        if (isRemixCanvas(projectId)) forgetRemixCanvas(projectId);
+        navigate(isRemixCanvas(projectId) ? "/remix" : "/canvas");
     }, [cleanupAssetImages, message, navigate, nodesRef, projectId]);
 
     const renameCurrentProject = useCallback(

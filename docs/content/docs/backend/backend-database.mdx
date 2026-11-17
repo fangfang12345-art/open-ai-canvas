@@ -5,6 +5,18 @@ description: 影策后端核心持久化表与状态边界
 
 # 后端数据库
 
+## 视频搬运记录（Schema 100）
+
+版本 100 `video_transfers` 新增同名记录表，保留既有任务和资源结构。每条记录包含 `id`、`user_id`、`title`、`source_resource_id`、`payload_json`、`revision`、`created_at`、`updated_at`；按用户和更新时间建立联合索引，源资源 ID 单独索引。
+
+`payload_json` 保存原视频展示信息、可探测的帧率/帧数、当前支路及 `fixed-r16` / `moving-v6` 各自的设置和任务快照。分支 `segments[]` 保存每个 10 秒片段的绝对起点、时长、顺序、状态、进度、输出资源和算法摘要；不足 10 秒的末段保留，不足一帧的空尾段省略。媒体二进制仍在资源存储中；任务状态以关联的 `tasks` 记录为准。配置更新带预期 `revision` 并递增版本，任务进度刷新使用条件更新快照，不覆盖并发设置。
+
+每个分支运行仍创建一个 `video_transfer` 任务，`input_json.segmentCount` 用于父任务超时预算，`result_json.segments` 是执行中的分段权威状态。多个片段串行提交状态快照，并同时校验运行状态、租约 owner 与有效期，避免取消或任务接管后旧进程覆写。失败和取消保留已提交的成功输出；同一任务恢复时复用这些片段。无需新增片段表或迁移版本，片段输出参与任务和业务记录的资源引用保护。
+
+固定多区域配置保存在原有设置 JSON 的 `fixedRegions` 数组中，每项包含原片像素 `roi`、`referenceSeconds`、`startSeconds` 和 `durationSeconds`，不增加数据库列。任务输入另保存算法策略版本；恢复或重试时同时校验版本、原片与配置，防止把旧策略产生的结果混入新输出。读取历史失败任务可从 `result_json.segments` 聚合安全错误原因，不改写历史任务正文。
+
+提交任务时，记录绑定与 `video_transfer` 类型任务创建在同一事务中完成。输入和输出资源受引用保护；更换原片重置分支配置及结果，但不直接物理删除旧资源。迁移只追加新表，部署前按既有流程备份、迁移并校验 Schema。
+
 ## 网站访问统计（Schema 99）
 
 版本 99 `site_traffic_events` 新建匿名事件表，保留 1–98 的迁移名称及校验和，不回填历史访问。模型清单及 SQLite → PostgreSQL 复制清单均登记此表。

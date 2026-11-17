@@ -35,6 +35,8 @@ export function WorkspaceCommandPalette({ open, onClose }: { open: boolean; onCl
             { id: "home", title: t("shell.palette.home"), icon: Home, to: "/" },
             ...(features.shortDramaEnabled ? [toolEntry("projects", "/projects")] : []),
             toolEntry("canvas", "/canvas"),
+            toolEntry("remix", "/remix"),
+            toolEntry("video-transfer", "/video-transfer"),
             ...(features.taskCenterEnabled ? [toolEntry("tasks", "/tasks")] : []),
             toolEntry("assets", "/assets"),
             toolEntry("skills", "/skills"),

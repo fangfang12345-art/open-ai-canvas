@@ -20,6 +20,8 @@ export const koKR: Messages = {
     },
     nav: {
         tools: {
+            remix: "동영상 리믹스",
+            videoTransfer: "동영상 재활용",
             create: "창작",
             projects: "숏드라마",
             canvas: "캔버스",

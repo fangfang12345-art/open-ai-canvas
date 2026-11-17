@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -104,5 +105,49 @@ func TestChunkAdmissionReservesBeforeBody(t *testing.T) {
 	w = call("POST", fmt.Sprintf("/api/resources/uploads/%s/complete", id), "")
 	if w.Code != 404 {
 		t.Fatalf("duplicate completion status=%d", w.Code)
+	}
+	w = call("POST", "/api/resources/uploads", `{"fileName":"video.mp4","kind":"video","purpose":"video-transfer","size":62914560}`)
+	if w.Code != 200 {
+		t.Fatalf("video admission status=%d body=%s", w.Code, w.Body.String())
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	id = response.Data.UploadID
+	sess := takeChunkSession(id)
+	if sess == nil {
+		t.Fatal("missing session")
+	}
+	dir := sess.Dir
+	// A different owner cannot release the reservation or remove its chunks.
+	if err := db.Create(&model.User{ID: "chunk-other", Username: "chunk-other", Status: model.UserStatusActive}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.AuthSession{ID: "other-session", UserID: "chunk-other", TokenHash: auth.HashToken("other-token"), ExpiresAt: time.Now().Add(time.Hour)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	foreign := httptest.NewRequest("DELETE", "/api/resources/uploads/"+id, nil)
+	foreign.AddCookie(&http.Cookie{Name: service.SessionCookieName, Value: "other-session.other-token"})
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, foreign)
+	if w.Code != 404 {
+		t.Fatalf("foreign cancellation status=%d", w.Code)
+	}
+	w = call("DELETE", "/api/resources/uploads/"+id, "")
+	if w.Code != 200 {
+		t.Fatalf("cancel status=%d body=%s", w.Code, w.Body.String())
+	}
+	if takeChunkSession(id) != nil {
+		t.Fatal("cancelled session remains")
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("cancelled chunks remain: %v", err)
+	}
+	if used, _ := repo.DailyUploadBytes("chunk-user", time.Now().UTC().Format("2006-01-02")); used != 7 {
+		t.Fatalf("cancelled quota=%d want 7", used)
+	}
+	w = call("DELETE", "/api/resources/uploads/"+id, "")
+	if w.Code != 200 {
+		t.Fatalf("repeat cancel status=%d", w.Code)
 	}
 }

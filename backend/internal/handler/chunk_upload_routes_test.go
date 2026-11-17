@@ -17,6 +17,7 @@ func TestChunkedUploadRoutesAreRegistered(t *testing.T) {
 		"POST /api/resources/uploads":                  false,
 		"PUT /api/resources/uploads/:id/chunks/:index": false,
 		"POST /api/resources/uploads/:id/complete":     false,
+		"DELETE /api/resources/uploads/:id":            false,
 	}
 	for _, route := range router.Routes() {
 		key := route.Method + " " + route.Path

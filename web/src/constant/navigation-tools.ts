@@ -1,7 +1,23 @@
 // label 是中文源文案（用于搜索与兜底），界面显示用 labelKey 经 i18n 翻译。
 import { Blocks, CircleDollarSign, Clapperboard, Images, LibraryBig, ListTodo, PanelsTopLeft, Settings, PenTool } from "lucide-react";
+import { RemixIcon } from "@/components/icons/remix-icon";
+import { VideoTransferIcon } from "@/components/icons/video-transfer-icon";
 
 export const navigationTools = [
+    {
+        slug: "video-transfer",
+        label: "视频搬运",
+        labelKey: "nav.tools.videoTransfer",
+        icon: VideoTransferIcon,
+        section: "创作空间",
+    },
+    {
+        slug: "remix",
+        label: "二创短视频",
+        labelKey: "nav.tools.remix",
+        icon: RemixIcon,
+        section: "创作空间",
+    },
     {
         slug: "create",
         label: "创作",

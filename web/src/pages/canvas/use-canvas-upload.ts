@@ -15,7 +15,7 @@ import { isAudioFile } from "@/lib/canvas/canvas-project-generation";
 import { fitImageNodeSize, fitNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
 import { CANVAS_UPLOAD_ACCEPT, createFileUploadPlaceholder, uploadNodeType, uploadPercent } from "@/lib/canvas/canvas-file-upload";
 import { recordReplacedMediaVersion } from "@/lib/canvas/canvas-media-versions";
-import { resourceIdFromStorageKey, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
+import { resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, uploadResourceFile, type YouTubeVideoImport } from "@/services/api/resources";
 import { uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { prepareCanvasImage } from "@/services/canvas-image-loader";
@@ -833,6 +833,40 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
         } satisfies CanvasNodeData;
     }, []);
 
+    const insertYouTubeVideo = useCallback(
+        async ({ resource, title, sourceUrl, videoId }: YouTubeVideoImport, signal?: AbortSignal) => {
+            const session = uploadSessionRef.current;
+            const scope = getActiveUserScope();
+            const isCurrent = () => session.active && scope === getActiveUserScope() && !signal?.aborted;
+            const node = await createAssetPayloadNode(
+                {
+                    kind: "video",
+                    title,
+                    url: resourceFileUrl(resource.id),
+                    storageKey: resourceStorageKey(resource.id),
+                    originalFileName: `${title}.mp4`,
+                    width: resource.width,
+                    height: resource.height,
+                    durationMs: resource.durationMs,
+                    bytes: resource.size,
+                    mimeType: resource.mimeType,
+                },
+                getCanvasCenter(),
+            );
+            if (!isCurrent()) return;
+            node.metadata = { ...node.metadata, importSource: { provider: "youtube", videoId, url: sourceUrl } };
+            const asset = await ensureCanvasNodeAsset({ canvasId, domainProjectId, node, source: "canvas-upload", signal });
+            if (!isCurrent()) return;
+            // The first saved snapshot must reference both the resource and its asset.
+            node.metadata = { ...node.metadata, assetId: asset.assetId };
+            setNodes((current) => [...current, node]);
+            selectInsertedNode(node.id, "close");
+            setContextMenu(null);
+            if (domainProjectId) void queryClient.invalidateQueries({ queryKey: ["project", domainProjectId] });
+        },
+        [canvasId, createAssetPayloadNode, domainProjectId, getCanvasCenter, queryClient, selectInsertedNode, setContextMenu, setNodes],
+    );
+
     const insertAssetPayloads = useCallback(
         async (payloads: InsertAssetPayload[], origin: Position, successMessage: string, failureMessage: string): Promise<CanvasNodeData[]> => {
             const session = uploadSessionRef.current;
@@ -895,6 +929,7 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
         handleUploadFiles,
         handleUploadRequest,
         imageInputRef,
+        insertYouTubeVideo,
         closeUploadModal,
         openAssetsAtPosition,
         pasteAssistantImage,

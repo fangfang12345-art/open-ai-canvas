@@ -5,6 +5,40 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+## 视频搬运
+
+以下接口要求登录，记录、输入资源和输出资源均按当前用户归属校验，返回统一业务信封。
+
+| 接口 | 合同 |
+| --- | --- |
+| `GET /api/video-transfers?page&pageSize&q` | 按更新时间列出当前账号记录，返回 `{records,total,page,pageSize,hasMore}`；`q` 搜索记录名称 |
+| `POST /api/video-transfers` | `{title,selectedBranch}` 创建记录，返回 `{record}` |
+| `GET /api/video-transfers/:id` | 返回 `{record}`，合并关联任务的最新执行状态 |
+| `PATCH /api/video-transfers/:id` | `{expectedRevision,title?,sourceResourceId?,sourceName?,selectedBranch?,branches?}`；分支参数使用 `{branches:{"fixed-r16":{settings:{...}}}}`，返回 `{record}` |
+| `POST /api/video-transfers/:id/run` | `{branch,expectedRevision}` 从已保存设置创建队列任务，返回 `{record}` |
+| `POST /api/video-transfers/:id/cancel` | 取消该记录仍在执行的任务，返回 `{record}` |
+| `GET /api/video-transfers/capabilities` | 返回 `{branches:[{id,available,reason?}],limits}`，用于展示依赖可用性与服务端处理上限 |
+
+分支 ID 为 `fixed-r16` / `moving-v6`。`settings` 包含 `startSeconds`、`durationSeconds`、`workers`，固定支路使用四角枚举 `target`，移动支路使用原视频绝对秒数 `referenceSeconds` 和原始像素整数 `roi:{x,y,width,height}`。`durationSeconds=0` 表示至片尾；移动参考帧可在处理片段之外。实际媒体参数由服务端资源和 FFprobe 验证，不信任客户端路径或任意输出 URL。
+
+固定支路另支持 `fixedRegions:[{roi,referenceSeconds,startSeconds,durationSeconds}]`，最多四个互不重叠的原片像素选区。每区参考时刻必须在该区有效时间内，时长为 `0` 表示至原片片尾；所有时间均为原片绝对秒数。有精确区域时忽略旧的 `target`、顶层 `roi` 和 `referenceSeconds`，提交空数组可清空精确区域。每个内部处理窗口复用同一参考标定，区域有效时间外保留原画，有效时间内无法确认目标时失败。移动分支不接受固定区域配置。
+
+记录包含 `id`、`title`、`revision`、源资源及媒体信息、`selectedBranch`、两份 `branches` 和时间。每份分支状态包含 `settings`、`status`、`progress`、`segments`，以及可选的 `stage`、`error`、`taskId`、`outputResourceId`、`elapsedSeconds`、`summary`。内部按 10 秒生成片段，`segments[]` 包含 `id`（如 segment-1）、从 0 开始的 `index`、原片绝对 `startSeconds`、`durationSeconds`、独立状态/进度及可选输出/摘要/错误。客户端使用分支 `progress` 和 `stage` 展示整体进度，使用成功分支的 `outputResourceId` 预览与下载完整结果，不把内部片段呈现为画布节点。单段复用该段输出，多段全部成功后合成完整视频；合成与发布完成前进度不达 100%。部分失败或取消仍保留内部已成功输出。
+
+摘要包含移动跟踪覆盖率、修复像素统计与已知局限；客户端不能写入任务状态或结果字段。两条支路独立读取原片，改动原片时重置两条支路。`limits` 增加 `segmentDurationSeconds=10`、`maxConcurrentSegments`（默认 2）；`maxSourceBytes`、`maxSourceDurationSeconds`、`maxDurationSeconds` 默认 0 表示不限，客户端只在正数时校验。可用时记录附带 `sourceFrameRate` / `sourceFrames`，执行前重新探测并排除不足一帧的空尾段。`workers` 是一批的总并发预算，均分给正在执行的片段。
+
+旧版本写入返回 409；不存在或不属于当前用户的对象返回 404；无效范围或选区返回参数错误；运行环境缺失返回 503；任务和存储配额沿用现有规则。媒体格式不受支持、算法失败、超时或取消写入任务终态，不用未处理原片伪装成功输出。详情见[视频搬运](/docs/backend/video-transfer)。
+
+## YouTube 视频导入
+
+`POST /api/resources/import-youtube` 接受 `{url}`，要求登录 Cookie、同源写请求和账号可写存储。支持 YouTube 的 `watch`、`shorts`、`embed` 与 `youtu.be` 单视频链接；服务端提取视频 ID 后重建地址，忽略分享参数与播放列表，不接受任意下载地址。沿用 `resourceImportPerMinute` 限流，并限制每个后端进程同时运行 2 个下载。
+
+成功返回 `data={resource,title,sourceUrl,videoId}`。`resource` 使用已有资源合同，具有实测宽高、时长和持久化资源 URL，可直接作为视频节点保存。视频先下载至后端数据目录的临时子目录，再走普通资源的 MIME 探测、每日上传额度、容量检查与存储配置；临时文件在结束时删除。可携带 `X-Idempotency-Key`，资源落盘沿用上传幂等规则。
+
+服务器需要 `yt-dlp`（含兼容版本的 `yt-dlp-ejs`）、Node、ffmpeg 和 ffprobe；通过 `CANVAS_YTDLP_PATH` 指定 yt-dlp，留空使用 PATH，ffmpeg 沿用 `CANVAS_FFMPEG_PATH`。下载忽略用户级 yt-dlp 配置和插件，不读取浏览器 Cookie。当前只接受无需登录的公开视频，最高 1080p、20 分钟以内，文件大小受现有上传策略限制且不超过 500 MiB。单次下载最多 5 分钟，客户端取消请求会终止下载；Unix 主机同时终止其 ffmpeg 和 JS 子进程。
+
+输入或大小、时长不符合要求返回 400；并发或频率限制返回 429；工具缺失返回 503；下载失败或 YouTube 要求验证返回 502；超时返回 504。错误正文不会暴露 yt-dlp 原始诊断、带签名的媒体 URL 或本地路径。
+
 ## 网站访问统计
 
 | 接口 | 合同 |
@@ -232,9 +266,9 @@ handle 放错端点、格式错误或行 ID 不存在时，工具错误回执提
 
 ## 分片上传配额
 
-`POST /resources/uploads` 在接收分片前预留整个文件的日额度和账号容量。文件大小必须严格小于 `resourceUploadMB`；同一账号最多 32 个未到期会话，跨后端实例共同计数。未满足配额的请求不会创建分片目录。分片和完成请求按会话串行执行；会话过期或已完成返回 404，重新创建会话后可整传重试。
+`POST /resources/uploads` 在接收分片前预留整个文件的日额度和账号容量。默认文件大小必须严格小于 `resourceUploadMB`；视频搬运使用 `purpose:"video-transfer",kind:"video"`，免除单文件大小限制，并在完成时用真实 MIME 和 FFprobe 校验视频及元数据。此用途不能用于图片或普通文件，仍保留每日和总容量限制。同一账号最多 32 个未到期会话，跨后端实例共同计数。未满足配额的请求不会创建分片目录。分片和完成请求按会话串行执行；会话过期或已完成返回 404，重新创建会话后可整传重试。
 
-完成上传时以数据库事务提交容量并消费预留，使用既有资源幂等标识。失败释放预留；跨 UTC 日期完成需要通过当天日额度检查。请求与响应字段不变。
+完成上传时以数据库事务提交容量并消费预留，使用初始化 JSON 的 `idempotencyKey` 保持同一次逻辑上传重试幂等。失败资源重试继续使用已批准的预留，不重新触发普通单文件上限。失败释放预留；跨 UTC 日期完成需要通过当天日额度检查。每个有效分片上传后续期 90 分钟，持续传输不受固定总时限影响。`DELETE /resources/uploads/:id` 取消当前用户会话、清理临时分片并释放预留；已不存在的会话返回成功。客户端取消上传后调用此接口。
 
 ## 存储容量与只读
 

@@ -11,7 +11,11 @@ import { canCancelGenerationTask } from "@/lib/generation-task-display";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
+import { isRemixCanvas, rememberRemixCanvas, remixCanvasPath } from "@/lib/canvas/remix-workspace";
+import { RemixEmptyState } from "@/pages/remix/remix-empty-state";
+import { RemixVideoImportForm } from "@/pages/remix/remix-video-import-form";
+import { useRemixVideoImport } from "@/pages/remix/use-remix-video-import";
 import { loadAssetsForUse, saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { canvasAssetHandoffIds } from "@/lib/canvas/canvas-asset-handoff";
 import { useEffectiveConfig } from "@/stores/use-config-store";
@@ -227,6 +231,7 @@ function visibleGenerationBatch(node: CanvasNodeData) {
 
 export default function CanvasPage() {
     const { id } = useParams<{ id: string }>();
+    const location = useLocation();
     useCanvasThemeScope();
     const [mounted, setMounted] = useState(false);
 
@@ -235,6 +240,9 @@ export default function CanvasPage() {
     }, []);
 
     if (!mounted) return <CanvasRefreshShell />;
+
+    if (id && isRemixCanvas(id) && !location.pathname.startsWith("/remix/")) return <Navigate to={`${remixCanvasPath(id)}${location.search}`} state={location.state} replace />;
+    if (id && !isRemixCanvas(id) && location.pathname.startsWith("/remix/")) return <Navigate to={`/canvas/${encodeURIComponent(id)}${location.search}`} state={location.state} replace />;
 
     return <CanvasViewportPage key={id} />;
 }
@@ -247,6 +255,7 @@ function CanvasViewportPage() {
     const params = useParams<{ id: string }>();
     const [searchParams, setSearchParams] = useSearchParams();
     const projectId = params.id || "";
+    const remixCanvas = isRemixCanvas(projectId);
     const canvasStorageScope = getActiveUserScope();
     const containerRef = useRef<HTMLDivElement>(null);
     const didInitialCenterRef = useRef(false);
@@ -462,6 +471,10 @@ function CanvasViewportPage() {
     const openAgent = useCallback(() => {
         openAssistant();
     }, [openAssistant]);
+
+    useEffect(() => {
+        if (projectLoaded && remixCanvas) rememberRemixCanvas(projectId);
+    }, [projectId, projectLoaded, remixCanvas]);
 
     const sendSelectionToAgent = useCallback(
         (nodeId?: string) => {
@@ -788,6 +801,7 @@ function CanvasViewportPage() {
         handleUploadFiles,
         handleUploadRequest,
         imageInputRef,
+        insertYouTubeVideo,
         openAssetsAtPosition,
         pasteSystemClipboard,
         replaceNodeMedia,
@@ -808,6 +822,15 @@ function CanvasViewportPage() {
         setContextMenu,
         setDialogNodeId,
     });
+    const [remixImportOpen, setRemixImportOpen] = useState(false);
+    const handleYouTubeImported = useCallback(
+        async (video: Parameters<typeof insertYouTubeVideo>[0], signal: AbortSignal) => {
+            await insertYouTubeVideo(video, signal);
+            if (!signal.aborted) setRemixImportOpen(false);
+        },
+        [insertYouTubeVideo],
+    );
+    const remixVideoImport = useRemixVideoImport(projectId, handleYouTubeImported);
     const replaceCanvasNodeMedia = useCallback((node: CanvasNodeData) => handleUploadRequest(node.id), [handleUploadRequest]);
     const { actions: batchReferences, pickerModal: batchReferencePickerModal } = useCanvasBatchReferences({ nodesRef, connectionsRef, setNodes, setConnections, createFileNode });
     const { rotateImageNode, rotatingNodeId } = useCanvasImageRotation({ projectId, nodesRef, setNodes, setConnections, setSelectedNodeIds, readOnly: false });
@@ -1393,7 +1416,7 @@ function CanvasViewportPage() {
         for (const asset of linkedProjectQuery.data?.assets || []) {
             if (!asset.folderId) continue;
             const local = localById.get(asset.id);
-            const characterCover = asset.character?.representations.find((item) => item.role === "turnaround_sheet") || asset.character?.representations.find((item) => item.role === "primary") || asset.character?.representations[0];
+            const characterCover = asset.character?.representations.find((item) => item.role === "primary") || asset.character?.representations.find((item) => item.role === "turnaround_sheet") || asset.character?.representations[0];
             const type = asset.category === "character" || asset.mediaType === "image" ? CanvasNodeType.Image : asset.mediaType === "video" ? CanvasNodeType.Video : asset.mediaType === "audio" ? CanvasNodeType.Audio : CanvasNodeType.Text;
             const remoteResourceId = resourceIdFromStorageKey(asset.storageKey);
             const storageKey = characterCover ? `resource:${characterCover.resourceId}` : local?.kind === "image" || local?.kind === "video" || local?.kind === "audio" ? local.data.storageKey : remoteResourceId ? asset.storageKey : undefined;
@@ -2611,43 +2634,46 @@ function CanvasViewportPage() {
     // 关联的不是短剧（404）时 loadFailed 为真，回到普通画布。
     const dramaCanvas = Boolean(drama.dramaId) && !drama.loadFailed;
     const dramaFirstEpisode = drama.summary?.episodes.find((episode) => episode.stats.segments > 0);
-    const emptyCanvasState =
-        emptyStateKind === "freeform" ? (
-            <CanvasFreeformEmptyState commands={freeformCreateCommands} />
-        ) : emptyStateKind === "linked" && drama.summary ? (
-            <CanvasDramaEmptyState
-                dramaName={drama.summary.project.name}
-                studioPath={`/projects/${encodeURIComponent(drama.summary.project.id)}`}
-                episodeLabel={dramaFirstEpisode ? `第 ${dramaFirstEpisode.number} 集` : undefined}
-                onProjectEpisode={dramaFirstEpisode ? () => void drama.projectEpisode(dramaFirstEpisode.id) : undefined}
-                onAddText={() => createNode(CanvasNodeType.Text)}
-            />
-        ) : emptyStateKind === "linked" && drama.dramaId && !drama.loadFailed ? null : emptyStateKind === "linked" ? (
-            <CanvasLinkedProjectEmptyState
-                projectName={linkedProjectQuery.data?.project.name || currentProject?.title || "项目画布"}
-                hasChapter={Boolean(linkedProjectQuery.data?.units.length)}
-                onAddFirstChapter={() => {
-                    const first = linkedProjectQuery.data?.units.slice().sort((left, right) => left.position - right.position)[0];
-                    if (first) void handleProjectChapterInsert({ id: first.id, projectId: linkedProjectId, title: first.title, position: first.position });
-                }}
-                onOpenAssets={() => openProjectAssets()}
-                onAddText={() => createNode(CanvasNodeType.Text)}
-            />
-        ) : emptyStateKind === "guided" ? (
-            <CanvasShortDramaEmptyState
-                onCreatePipeline={createShortDramaPipeline}
-                onSubmitPrompt={(text) => {
-                    setCinematicAgentEntry(true);
-                    // 有输入时直接作为首条消息提交；空输入只打开面板。
-                    if (text) setAgentPrefillRequest((current) => ({ id: (current?.id ?? 0) + 1, text, autoSubmit: true }));
-                    openAgent();
-                }}
-                onStartFreeform={() => updateProject(projectId, { starterMode: "freeform" })}
-                onUpload={() => handleUploadRequest()}
-                onAddText={() => createNode(CanvasNodeType.Text)}
-                onAddScript={() => createNode(CanvasNodeType.Script)}
-            />
-        ) : null;
+    const emptyCanvasState = remixCanvas ? (
+        nodes.length === 0 ? (
+            <RemixEmptyState videoImport={remixVideoImport} onAddText={() => createNode(CanvasNodeType.Text)} />
+        ) : null
+    ) : emptyStateKind === "freeform" ? (
+        <CanvasFreeformEmptyState commands={freeformCreateCommands} />
+    ) : emptyStateKind === "linked" && drama.summary ? (
+        <CanvasDramaEmptyState
+            dramaName={drama.summary.project.name}
+            studioPath={`/projects/${encodeURIComponent(drama.summary.project.id)}`}
+            episodeLabel={dramaFirstEpisode ? `第 ${dramaFirstEpisode.number} 集` : undefined}
+            onProjectEpisode={dramaFirstEpisode ? () => void drama.projectEpisode(dramaFirstEpisode.id) : undefined}
+            onAddText={() => createNode(CanvasNodeType.Text)}
+        />
+    ) : emptyStateKind === "linked" && drama.dramaId && !drama.loadFailed ? null : emptyStateKind === "linked" ? (
+        <CanvasLinkedProjectEmptyState
+            projectName={linkedProjectQuery.data?.project.name || currentProject?.title || "项目画布"}
+            hasChapter={Boolean(linkedProjectQuery.data?.units.length)}
+            onAddFirstChapter={() => {
+                const first = linkedProjectQuery.data?.units.slice().sort((left, right) => left.position - right.position)[0];
+                if (first) void handleProjectChapterInsert({ id: first.id, projectId: linkedProjectId, title: first.title, position: first.position });
+            }}
+            onOpenAssets={() => openProjectAssets()}
+            onAddText={() => createNode(CanvasNodeType.Text)}
+        />
+    ) : emptyStateKind === "guided" ? (
+        <CanvasShortDramaEmptyState
+            onCreatePipeline={createShortDramaPipeline}
+            onSubmitPrompt={(text) => {
+                setCinematicAgentEntry(true);
+                // 有输入时直接作为首条消息提交；空输入只打开面板。
+                if (text) setAgentPrefillRequest((current) => ({ id: (current?.id ?? 0) + 1, text, autoSubmit: true }));
+                openAgent();
+            }}
+            onStartFreeform={() => updateProject(projectId, { starterMode: "freeform" })}
+            onUpload={() => handleUploadRequest()}
+            onAddText={() => createNode(CanvasNodeType.Text)}
+            onAddScript={() => createNode(CanvasNodeType.Script)}
+        />
+    ) : null;
     // Agent 面板体量很大且已 memo：传入稳定引用，避免画布每次提交视口/拖拽都带着它整棵重渲染。
     const agentSelectedNodeIds = useMemo(() => Array.from(selectedNodeIds), [selectedNodeIds]);
     const agentFocusNodeRef = useRef<(nodeId: string) => void>(() => {});
@@ -2853,7 +2879,7 @@ function CanvasViewportPage() {
             <main className="flex h-full flex-col items-center justify-center gap-4">
                 <p role="alert">{loadError}</p>
                 <Button onClick={retryLoad}>重新加载</Button>
-                <Link to="/canvas">返回画布库</Link>
+                <Link to={remixCanvas ? "/remix" : "/canvas"}>{remixCanvas ? "返回二创短视频" : "返回画布库"}</Link>
             </main>
         );
     if (!projectLoaded) return <CanvasRefreshShell />;
@@ -2917,6 +2943,12 @@ function CanvasViewportPage() {
                         <section data-canvas-editor className="relative min-w-0 flex-1 flex flex-col min-h-0 overflow-clip">
                             {!focusMode ? (
                                 <CanvasTopBar
+                                    remix={remixCanvas}
+                                    onImportVideo={() => {
+                                        changeCanvasView("canvas");
+                                        setRemixImportOpen((open) => !open);
+                                    }}
+                                    videoImportOpen={nodes.length === 0 || remixImportOpen || remixVideoImport.busy}
                                     view={canvasView}
                                     onViewChange={changeCanvasView}
                                     title={currentProject?.title || "未命名画布"}
@@ -3123,6 +3155,15 @@ function CanvasViewportPage() {
                                     <CanvasFileDropOverlay active={fileDropActive} theme={theme} />
 
                                     {emptyCanvasState}
+                                    {remixCanvas && nodes.length > 0 && (remixImportOpen || remixVideoImport.busy) ? (
+                                        <div
+                                            className="pointer-events-auto absolute right-5 z-30 w-[420px] rounded-xl border p-4 shadow-lg"
+                                            style={{ top: "var(--canvas-topbar-offset)", background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
+                                            data-canvas-no-zoom
+                                        >
+                                            <RemixVideoImportForm state={remixVideoImport} compact />
+                                        </div>
+                                    ) : null}
 
                                     {!focusMode || focusDockRevealed ? (
                                         <CanvasToolbar
@@ -3753,8 +3794,9 @@ function CanvasViewportPage() {
                                 imageTitle={selectedCharacterImage?.title}
                                 audioTitle={selectedCharacterAudio?.title}
                                 onClose={() => setCharacterLibraryOpen(false)}
-                                onInsert={async (payloads) => {
-                                    await handleProjectAssetsInsert(payloads, characterLibraryPosition);
+                                onInsert={async (payloads, editAfterInsert) => {
+                                    const inserted = await handleProjectAssetsInsert(payloads, characterLibraryPosition);
+                                    if (editAfterInsert && inserted[0]) setCharacterReferenceNodeId(inserted[0].id);
                                 }}
                             />
                             <CanvasProjectAssetModal

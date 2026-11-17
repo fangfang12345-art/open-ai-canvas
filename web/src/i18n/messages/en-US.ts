@@ -19,6 +19,8 @@ export const enUS: Messages = {
     },
     nav: {
         tools: {
+            remix: "Video remix",
+            videoTransfer: "Video transfer",
             create: "Create",
             projects: "Short dramas",
             canvas: "Canvas",

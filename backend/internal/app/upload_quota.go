@@ -29,11 +29,19 @@ func (s *Service) reserveChunkedUploadQuota(userID string, size int64) (string, 
 }
 
 func (s *Service) ReserveChunkUploadSession(userID, id string, size int64, expires time.Time, maxSessions int) error {
+	return s.reserveChunkUploadSession(userID, id, size, expires, maxSessions, false)
+}
+
+func (s *Service) ReserveVideoTransferUploadSession(userID, id string, size int64, expires time.Time, maxSessions int) error {
+	return s.reserveChunkUploadSession(userID, id, size, expires, maxSessions, true)
+}
+
+func (s *Service) reserveChunkUploadSession(userID, id string, size int64, expires time.Time, maxSessions int, videoTransfer bool) error {
 	policy, err := s.RuntimePolicy()
 	if err != nil {
 		return err
 	}
-	if size <= 0 || size >= megabytes(policy.Resource.ResourceUploadMB) {
+	if size <= 0 || (!videoTransfer && size >= megabytes(policy.Resource.ResourceUploadMB)) {
 		return BadAuthRequest(fmt.Sprintf("单个上传文件必须小于 %dMB", policy.Resource.ResourceUploadMB))
 	}
 	if !expires.After(time.Now()) || maxSessions <= 0 {
@@ -49,6 +57,10 @@ func (s *Service) ReserveChunkUploadSession(userID, id string, size int64, expir
 
 func (s *Service) ReleaseChunkUploadSession(userID, id string) error {
 	return s.repo.ReleaseUploadSession(userID, id)
+}
+
+func (s *Service) RenewChunkUploadSession(userID, id string, expires time.Time) error {
+	return uploadReservationError(s.repo.RenewUploadSession(userID, id, expires))
 }
 
 func uploadReservationError(err error) error {

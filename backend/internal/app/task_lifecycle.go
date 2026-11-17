@@ -10,6 +10,7 @@ import (
 
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/repository"
+	"yingce/backend/internal/videotransfer"
 )
 
 // taskLifecycleCoordinator 负责任务重试与取消这类会改变任务状态的写命令。
@@ -41,6 +42,9 @@ func (w *taskLifecycleCoordinator) retryTask(userID string, id string) (*model.T
 	}
 	if task.MediaRecoveryJSON != "" {
 		return nil, BadAuthRequest("作品已生成，请使用重试保存，不要重复生成")
+	}
+	if task.Type == videotransfer.TaskType {
+		return nil, BadAuthRequest("请从视频搬运记录重新运行，保留当前参数和版本校验")
 	}
 	if task.CreationSubmissionID != nil {
 		return nil, creationConflict("智能创作重做需要新的报价批准，请回到创作会话继续")
@@ -167,7 +171,7 @@ func (w *taskLifecycleCoordinator) cancelTaskWithIntent(_ context.Context, userI
 	// 用户一旦看到任务进入上游提交/生成阶段，即使 request ID 尚未来得及写回，
 	// 也必须按“可能已经产生上游费用”处理。父任务失败和 worker context 属于
 	// 内部协调，仍需继续走下面的上游取消/对账流程，不能被这条 UI 规则截断。
-	if intent.Source == model.TaskCancellationUserRequest && taskUpstreamSubmitted(task) {
+	if intent.Source == model.TaskCancellationUserRequest && task.Type != videotransfer.TaskType && taskUpstreamSubmitted(task) {
 		return nil, BadAuthRequest("第三方请求已提交，任务不可取消")
 	}
 	originalStatus := task.Status

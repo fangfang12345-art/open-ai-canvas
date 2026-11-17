@@ -208,6 +208,15 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 	for _, canvas := range canvases {
 		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "画布", ID: canvas.ID, Title: canvas.Title, PrimaryJSON: canvas.PayloadJSON})
 	}
+	var transfers []model.VideoTransfer
+	if r.db.Migrator().HasTable(&model.VideoTransfer{}) {
+		if err := r.db.Where("user_id = ?", userID).Find(&transfers).Error; err != nil {
+			return snapshot, err
+		}
+		for _, transfer := range transfers {
+			snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "视频搬运", ID: transfer.ID, Title: transfer.Title, PrimaryJSON: transfer.PayloadJSON})
+		}
+	}
 
 	var tasks []model.Task
 	taskQuery := r.db.Select("id", "prompt", "status", "input_json", "result_json").Where("user_id = ?", userID)

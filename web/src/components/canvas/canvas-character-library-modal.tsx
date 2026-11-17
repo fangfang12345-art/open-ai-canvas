@@ -28,7 +28,7 @@ export function CanvasCharacterLibraryModal({
     imageTitle?: string;
     audioTitle?: string;
     onClose: () => void;
-    onInsert: (payloads: InsertAssetPayload[]) => Promise<void> | void;
+    onInsert: (payloads: InsertAssetPayload[], editAfterInsert?: boolean) => Promise<void> | void;
 }) {
     const { t } = useTranslation();
     const { message } = App.useApp();
@@ -57,8 +57,8 @@ export function CanvasCharacterLibraryModal({
     const total = charactersQuery.data?.total || 0;
     const canPack = Boolean(imageResourceId);
 
-    const insertCharacter = async (asset: ProjectAsset) => {
-        await onInsert([projectCharacterToInsertPayload(asset)]);
+    const insertCharacter = async (asset: ProjectAsset, editAfterInsert = false) => {
+        await onInsert([projectCharacterToInsertPayload(asset)], editAfterInsert);
         onClose();
     };
 
@@ -72,7 +72,7 @@ export function CanvasCharacterLibraryModal({
                 audioResourceId,
                 voiceName: audioTitle,
             });
-            await insertCharacter(created.asset);
+            await insertCharacter(created.asset, true);
             setName("");
             message.success(canPack ? t("canvasA.characterLibrary.packed") : t("canvasA.characterLibrary.created"));
         } catch (error) {

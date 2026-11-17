@@ -6,6 +6,9 @@ export const workspaceRoutePages = {
     assets: preloadableLazy(() => import("@/pages/assets")),
     canvas: preloadableLazy(() => import("@/pages/canvas")),
     canvasProject: preloadableLazy(() => import("@/pages/canvas/project")),
+    remix: preloadableLazy(() => import("@/pages/remix")),
+    videoTransfer: preloadableLazy(() => import("@/pages/video-transfer")),
+    videoTransferCanvas: preloadableLazy(() => import("@/pages/video-transfer/canvas")),
     create: preloadableLazy(() => import("@/pages/create")),
     ecommerce: preloadableLazy(() => import("@/pages/ecommerce")),
     imageWorkbench: preloadableLazy(() => import("@/pages/workbench/image-workbench-route")),
@@ -27,6 +30,8 @@ export const loadCanvasProjectPage = workspaceRoutePages.canvasProject.preload;
 const workspaceRouteSlugs: Record<string, keyof typeof workspaceRoutePages> = {
     create: "create",
     canvas: "canvas",
+    remix: "remix",
+    "video-transfer": "videoTransfer",
     assets: "assets",
     projects: "projects",
     tasks: "tasks",
@@ -47,7 +52,11 @@ export function preloadWorkspaceRoute(pathnameOrSlug: string) {
     const segments = pathnameOrSlug.replace(/^\//, "").split("/").filter(Boolean);
     const slug = segments[0] || "create";
     // 具体画布项目由 /canvas/:id 自己加载；不要在认证恢复阶段额外预加载画布列表。
-    if (slug === "canvas" && segments.length > 1) return;
+    if ((slug === "canvas" || slug === "remix") && segments.length > 1) return;
+    if (slug === "video-transfer" && segments.length > 1) {
+        warm("videoTransferCanvas");
+        return;
+    }
     if (slug === "projects" && segments.length > 1) {
         warm(segments[1] === "new" ? "projectCreate" : "projectDetail");
         return;

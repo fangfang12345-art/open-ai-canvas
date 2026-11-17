@@ -11,6 +11,7 @@ import { CanvasRefreshShell } from "@/pages/canvas/canvas-refresh-shell";
 import { AuthScene } from "@/pages/auth/auth-scene";
 import RouteErrorPage from "@/pages/route-error";
 import { isGuestWorkspacePath } from "@/lib/guest-workspace";
+import { isCanvasEditorPath } from "@/lib/workspace-routes";
 
 const AdminPage = lazy(() => import("@/pages/admin"));
 const EcommerceManagementPage = lazyAdminPage(() => import("@/pages/admin/ecommerce-management-page"));
@@ -57,6 +58,9 @@ const RegisterPage = lazy(() => import("@/pages/auth/register"));
 const ForgotPasswordPage = lazy(() => import("@/pages/auth/forgot-password"));
 const CanvasPage = workspaceRoutePages.canvas;
 const CanvasProjectPage = workspaceRoutePages.canvasProject;
+const RemixPage = workspaceRoutePages.remix;
+const VideoTransferPage = workspaceRoutePages.videoTransfer;
+const VideoTransferCanvasPage = workspaceRoutePages.videoTransferCanvas;
 const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
 const ArkPortraitResultPage = lazy(() => import("@/pages/ark-portrait-result"));
 const CreatePage = workspaceRoutePages.create;
@@ -87,7 +91,7 @@ function fullScreenDeferred(element: ReactNode) {
 
 function AuthenticatedWorkspaceLayout() {
     const { pathname } = useLocation();
-    const isCanvasProjectRoute = pathname.startsWith("/canvas/");
+    const isCanvasProjectRoute = isCanvasEditorPath(pathname);
     const fallback = isCanvasProjectRoute ? <CanvasRefreshShell /> : <FullScreenLoader label="正在打开创作空间" detail="准备当前页面" />;
     return (
         <RequireAuth allowAnonymous={isGuestWorkspacePath(pathname)}>
@@ -223,6 +227,17 @@ export const router = createBrowserRouter([
             },
             { path: "/projects/:projectId/*", element: <Navigate to=".." relative="path" replace /> },
             { path: "/canvas", element: <RequireAuth>{deferred(<CanvasPage />)}</RequireAuth> },
+            { path: "/remix", element: <RequireAuth>{deferred(<RemixPage />)}</RequireAuth> },
+            { path: "/video-transfer", element: <RequireAuth>{deferred(<VideoTransferPage />)}</RequireAuth> },
+            { path: "/video-transfer/:id", element: <RequireAuth>{deferred(<VideoTransferCanvasPage />)}</RequireAuth> },
+            {
+                path: "/remix/:id",
+                element: (
+                    <RequireAuth>
+                        <CanvasProjectPage />
+                    </RequireAuth>
+                ),
+            },
             {
                 path: "/canvas/:id",
                 element: (

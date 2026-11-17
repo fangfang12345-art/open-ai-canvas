@@ -12,6 +12,26 @@ var ErrUploadStorageLimit = errors.New("账号存储容量不足")
 var ErrUploadSessionLimit = errors.New("同时进行中的上传过多，请稍后重试")
 var ErrUploadReservationExpired = errors.New("上传会话不存在或已过期，请重新导入")
 
+func (r *Repository) RenewUploadSession(userID, id string, expires time.Time) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := lockUploadStorage(tx, userID); err != nil {
+			return err
+		}
+		now := time.Now()
+		if !expires.After(now) {
+			return ErrUploadReservationExpired
+		}
+		result := tx.Model(&model.UploadReservation{}).Where("id = ? AND user_id = ? AND expires_at > ?", id, userID, now).Update("expires_at", expires)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrUploadReservationExpired
+		}
+		return nil
+	})
+}
+
 func lockUploadStorage(tx *gorm.DB, userID string) error {
 	switch tx.Dialector.Name() {
 	case "postgres":

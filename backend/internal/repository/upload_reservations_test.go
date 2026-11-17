@@ -80,6 +80,37 @@ func TestUploadReservationConcurrentAdmission(t *testing.T) {
 	}
 }
 
+func TestUploadReservationRenewalPreservesQuotaAndOwnership(t *testing.T) {
+	db, repo, _ := uploadReservationTestDB(t)
+	lease := &model.UploadReservation{ID: "renew", UserID: "user", Size: 15, ExpiresAt: time.Now().Add(time.Minute)}
+	if err := repo.ReserveUploadSession(lease, 1000, 1000, 32); err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Now().Add(90 * time.Minute)
+	if err := repo.RenewUploadSession("other", lease.ID, expires); !errors.Is(err, ErrUploadReservationExpired) {
+		t.Fatalf("foreign renewal=%v", err)
+	}
+	if err := repo.RenewUploadSession("user", lease.ID, expires); err != nil {
+		t.Fatal(err)
+	}
+	var stored model.UploadReservation
+	if err := db.First(&stored, "id = ?", lease.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !stored.ExpiresAt.Equal(expires) {
+		t.Fatalf("renewed expiry=%v want %v", stored.ExpiresAt, expires)
+	}
+	if used, err := repo.DailyUploadBytes("user", time.Now().UTC().Format("2006-01-02")); err != nil || used != 15 {
+		t.Fatalf("renew quota=%d %v", used, err)
+	}
+	if err := db.Model(&stored).Update("expires_at", time.Now().Add(-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RenewUploadSession("user", lease.ID, expires); !errors.Is(err, ErrUploadReservationExpired) {
+		t.Fatalf("expired renewal=%v", err)
+	}
+}
+
 func TestUploadReservationAtomicCapacityCommit(t *testing.T) {
 	db, first, second := uploadReservationTestDB(t)
 	start := make(chan struct{})

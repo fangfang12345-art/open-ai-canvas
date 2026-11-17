@@ -19,7 +19,8 @@ import (
 )
 
 // 分片上传会话：把“导入本地媒体”拆成 开始→逐片→合并 三段，单片上限 8MB，
-// 整体文件仍遵守资源单文件上限；收片前在数据库预留日额度和存储容量。
+// 默认遵守资源单文件上限；video-transfer 专用视频上传免单文件上限。
+// 收片前在数据库预留日额度和存储容量。
 // 分片路由需要粘性路由，内存会话失效后重传；配额预留跨实例共享并按时间到期。
 const (
 	chunkUploadChunkSize   = 8 << 20
@@ -37,6 +38,7 @@ type chunkedUploadSession struct {
 	UserID         string
 	FileName       string
 	Kind           string
+	Purpose        string
 	Size           int64
 	Width          int
 	Height         int
@@ -91,7 +93,10 @@ func removeExpiredChunkSessions() {
 	chunkUploadSessions.Lock()
 	defer chunkUploadSessions.Unlock()
 	for id, sess := range chunkUploadSessions.m {
-		if now.Sub(sess.CreatedAt) > chunkUploadTTL && sess.mu.TryLock() {
+		if !sess.mu.TryLock() {
+			continue
+		}
+		if now.Sub(sess.CreatedAt) > chunkUploadTTL {
 			sess.closed = true
 			if sess.release != nil {
 				if err := sess.release(); err != nil {
@@ -100,8 +105,8 @@ func removeExpiredChunkSessions() {
 			}
 			_ = os.RemoveAll(sess.Dir)
 			delete(chunkUploadSessions.m, id)
-			sess.mu.Unlock()
 		}
+		sess.mu.Unlock()
 	}
 }
 
@@ -128,8 +133,28 @@ func dropChunkSession(id string) {
 	}
 }
 
-// RegisterChunkedUploadRoutes 注册本地媒体分片上传三条接口（POST 开始 / PUT 上传片 / POST 合并）。
+// RegisterChunkedUploadRoutes 注册分片上传的开始、收片、合并和取消接口。
 func RegisterChunkedUploadRoutes(r *gin.RouterGroup, svc *service.Service) {
+	r.DELETE("/resources/uploads/:id", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		session := takeChunkSession(c.Param("id"))
+		if session == nil {
+			ok(c, gin.H{"ok": true})
+			return
+		}
+		if session.UserID != user.ID {
+			fail(c, http.StatusNotFound, fmt.Errorf("上传会话不存在"))
+			return
+		}
+		session.mu.Lock()
+		defer session.mu.Unlock()
+		dropChunkSession(session.ID)
+		ok(c, gin.H{"ok": true})
+	})
 	r.POST("/resources/uploads", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
@@ -144,6 +169,7 @@ func RegisterChunkedUploadRoutes(r *gin.RouterGroup, svc *service.Service) {
 		var req struct {
 			FileName       string `json:"fileName"`
 			Kind           string `json:"kind"`
+			Purpose        string `json:"purpose"`
 			Size           int64  `json:"size"`
 			Width          int    `json:"width"`
 			Height         int    `json:"height"`
@@ -162,9 +188,17 @@ func RegisterChunkedUploadRoutes(r *gin.RouterGroup, svc *service.Service) {
 			fail(c, http.StatusBadRequest, fmt.Errorf("文件大小必须大于 0"))
 			return
 		}
+		if req.Purpose != "" && (req.Purpose != "video-transfer" || req.Kind != "video") {
+			fail(c, http.StatusBadRequest, fmt.Errorf("上传用途无效"))
+			return
+		}
 		removeExpiredChunkSessions()
 		id, createdAt := newUploadSessionID(), time.Now()
-		if err := svc.ReserveChunkUploadSession(user.ID, id, req.Size, createdAt.Add(chunkUploadTTL), chunkUploadMaxPerUser); err != nil {
+		reserve := svc.ReserveChunkUploadSession
+		if req.Purpose == "video-transfer" {
+			reserve = svc.ReserveVideoTransferUploadSession
+		}
+		if err := reserve(user.ID, id, req.Size, createdAt.Add(chunkUploadTTL), chunkUploadMaxPerUser); err != nil {
 			failService(c, err)
 			return
 		}
@@ -183,12 +217,13 @@ func RegisterChunkedUploadRoutes(r *gin.RouterGroup, svc *service.Service) {
 			UserID:         user.ID,
 			FileName:       req.FileName,
 			Kind:           req.Kind,
+			Purpose:        req.Purpose,
 			Size:           req.Size,
 			Width:          req.Width,
 			Height:         req.Height,
 			DurationMs:     req.DurationMs,
 			IdempotencyKey: req.IdempotencyKey,
-			ChunkCount:     int((req.Size + chunkUploadChunkSize - 1) / chunkUploadChunkSize),
+			ChunkCount:     int((req.Size-1)/chunkUploadChunkSize + 1),
 			Dir:            dir,
 			CreatedAt:      createdAt,
 		}
@@ -247,6 +282,11 @@ func RegisterChunkedUploadRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		_ = written
+		if err := svc.RenewChunkUploadSession(user.ID, session.ID, time.Now().Add(chunkUploadTTL)); err != nil {
+			failService(c, err)
+			return
+		}
+		session.CreatedAt = time.Now()
 		ok(c, gin.H{"index": index})
 	})
 
@@ -272,6 +312,11 @@ func RegisterChunkedUploadRoutes(r *gin.RouterGroup, svc *service.Service) {
 			fail(c, http.StatusBadRequest, fmt.Errorf("上传文件不完整，请重新导入"))
 			return
 		}
+		if err := svc.RenewChunkUploadSession(user.ID, session.ID, time.Now().Add(chunkUploadTTL)); err != nil {
+			failService(c, err)
+			return
+		}
+		session.CreatedAt = time.Now()
 		mergedPath := filepath.Join(session.Dir, "merged")
 		merged, err := os.OpenFile(mergedPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 		if err != nil {
@@ -310,7 +355,11 @@ func RegisterChunkedUploadRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		defer fh.Close()
-		resource, svcErr := svc.UploadReservedResourceFile(user.ID, session.ID, session.FileName, session.Size, session.Kind, session.Width, session.Height, session.DurationMs, fh, session.IdempotencyKey)
+		upload := svc.UploadReservedResourceFile
+		if session.Purpose == "video-transfer" {
+			upload = svc.UploadVideoTransferSourceFile
+		}
+		resource, svcErr := upload(user.ID, session.ID, session.FileName, session.Size, session.Kind, session.Width, session.Height, session.DurationMs, fh, session.IdempotencyKey)
 		// 无论成败都结束会话：失败时前端会整传重试，不需要保留残片。
 		dropChunkSession(id)
 		if svcErr != nil {

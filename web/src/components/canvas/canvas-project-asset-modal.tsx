@@ -57,8 +57,8 @@ export function CanvasProjectAssetModal({
                 const project = item.project;
                 const media = item.media;
                 const coverRepresentation =
-                    character?.character?.representations.find((representation) => representation.role === "turnaround_sheet") ||
                     character?.character?.representations.find((representation) => representation.role === "primary") ||
+                    character?.character?.representations.find((representation) => representation.role === "turnaround_sheet") ||
                     character?.character?.representations.find((representation) => representation.role === "front");
                 const remoteResourceId = resourceIdFromStorageKey(project?.storageKey);
                 // 项目资产可能只有服务端记录、没有本地素材，媒体类型要显式声明，筛选才能覆盖它们。
@@ -210,8 +210,8 @@ export function projectCharacterToInsertPayload(asset: ProjectAsset): InsertAsse
     const card = asset.character;
     const definition = card.definition;
     const cover =
-        card.representations.find((representation) => representation.role === "turnaround_sheet") ||
         card.representations.find((representation) => representation.role === "primary") ||
+        card.representations.find((representation) => representation.role === "turnaround_sheet") ||
         card.representations.find((representation) => representation.role === "front");
     return {
         kind: "character",

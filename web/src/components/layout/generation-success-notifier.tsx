@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 
 import { translate } from "@/i18n";
+import { isRemixCanvas, remixCanvasPath } from "@/lib/canvas/remix-workspace";
 import { generationNoticeKind, generationNoticePromptExcerpt, generationNoticeThumbnail } from "@/lib/generation-notice";
 import { ApiError } from "@/services/api/request";
 import { queryGenerationTask, type GenerationTask } from "@/services/api/task-center";
@@ -54,8 +55,9 @@ export function GenerationSuccessNotifier() {
             const canvasId = canvasIds.size === 1 && first.projectId && projects.some((project) => project.id === first.projectId) ? first.projectId : "";
             const canvasTitle = canvasId ? projects.find((project) => project.id === canvasId)?.title?.trim() || translate("nav.pageTitles.canvas") : "";
             const current = pathnameRef.current;
-            const onCanvas = Boolean(canvasId) && (current === `/canvas/${canvasId}` || current.startsWith(`/canvas/${canvasId}/`));
-            const target = canvasId ? (onCanvas ? "" : `/canvas/${encodeURIComponent(canvasId)}`) : taskCenterEnabledRef.current && current !== "/tasks" ? "/tasks" : "";
+            const canvasPath = isRemixCanvas(canvasId) ? remixCanvasPath(canvasId) : `/canvas/${encodeURIComponent(canvasId)}`;
+            const onCanvas = Boolean(canvasId) && (current === canvasPath || current.startsWith(`${canvasPath}/`));
+            const target = canvasId ? (onCanvas ? "" : canvasPath) : taskCenterEnabledRef.current && current !== "/tasks" ? "/tasks" : "";
             const kind = generationNoticeKind(first);
             const title = tasks.length > 1 ? translate(away ? "shell.generationNotice.awayDone" : "shell.generationNotice.batchDone", { count: tasks.length }) : translate(`shell.generationNotice.done.${kind || "image"}`);
             const excerpt = tasks.length === 1 ? generationNoticePromptExcerpt(first.prompt) : "";

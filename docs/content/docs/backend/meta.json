@@ -8,6 +8,7 @@
     "http-api",
     "code-map",
     "backend-database",
+    "video-transfer",
     "channel-configuration",
     "ecommerce-agent",
     "video-token-billing",

@@ -13,6 +13,25 @@ func TestChunkQuotaRejectsSingleFileLimit(t *testing.T) {
 	}
 }
 
+func TestVideoTransferUploadBypassesSingleFileLimitButReservesAccountQuota(t *testing.T) {
+	svc := newResourceTestService(t)
+	if err := svc.ReserveVideoTransferUploadSession("user", "video", 60<<20, time.Now().Add(time.Hour), 32); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ReserveChunkUploadSession("user", "generic", 60<<20, time.Now().Add(time.Hour), 32); err == nil {
+		t.Fatal("generic upload limit bypassed")
+	}
+	if err := svc.ReserveVideoTransferUploadSession("user", "too-large-for-account", megabytes(defaultRuntimePolicy().Resource.DailyUploadMB), time.Now().Add(time.Hour), 32); err == nil {
+		t.Fatal("daily quota bypassed")
+	}
+	if _, err := svc.UploadVideoTransferSourceFile("user", "video", "invalid.mp4", 60<<20, "video", 1, 1, 1, bytes.NewReader([]byte("invalid"))); err == nil {
+		t.Fatal("invalid video accepted")
+	}
+	if used, _ := svc.repo.DailyUploadBytes("user", time.Now().UTC().Format("2006-01-02")); used != 0 {
+		t.Fatalf("failed validation retained quota=%d", used)
+	}
+}
+
 func TestChunkQuotaReservedUploadConsumesOnce(t *testing.T) {
 	svc := newResourceTestService(t)
 	if err := svc.ReserveChunkUploadSession("user", "session", 7, time.Now().Add(time.Hour), 32); err != nil {

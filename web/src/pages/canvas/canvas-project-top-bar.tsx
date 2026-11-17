@@ -18,6 +18,9 @@ import { CanvasShortcutsModal } from "./canvas-shortcuts-modal";
 export type CanvasProjectView = "canvas" | "assets";
 
 type CanvasTopBarProps = {
+    remix?: boolean;
+    onImportVideo?: () => void;
+    videoImportOpen?: boolean;
     view: CanvasProjectView;
     onViewChange: (view: CanvasProjectView) => void;
     title: string;
@@ -48,6 +51,9 @@ type CanvasTopBarProps = {
 };
 
 export function CanvasTopBar({
+    remix = false,
+    onImportVideo,
+    videoImportOpen = false,
     view,
     onViewChange,
     title,
@@ -119,8 +125,9 @@ export function CanvasTopBar({
                                     { type: "divider" },
                                     { key: "home", icon: <Home className="size-4" />, label: <Link to="/">主页</Link> },
                                     { key: "projects", icon: <LayoutGrid className="size-4" />, label: <Link to="/canvas">画布</Link> },
+                                    ...(remix ? [{ key: "remix", label: <Link to="/remix">二创短视频</Link> }] : []),
                                     { type: "divider" },
-                                    { key: "new", icon: <Plus className="size-4" />, label: "新建画布", onClick: onCreateProject },
+                                    { key: "new", icon: <Plus className="size-4" />, label: remix ? "新建二创画布" : "新建画布", onClick: onCreateProject },
                                     { key: "delete", danger: true, icon: <Trash2 className="size-4" />, label: "删除当前画布", onClick: onDeleteProject },
                                     { key: "save", icon: <Save className="size-4" />, label: <MenuLabel text="保存" shortcut="⌘ S" />, onClick: () => void onSave() },
                                     { type: "divider" },
@@ -139,6 +146,11 @@ export function CanvasTopBar({
                     </CanvasTopBarTooltip>
 
                     <div ref={titleRef} className="canvas-topbar-title-block flex min-w-0 flex-auto flex-col items-start overflow-hidden">
+                        {remix ? (
+                            <span className="text-[10px] leading-4" style={{ color: theme.node.muted }}>
+                                二创短视频
+                            </span>
+                        ) : null}
                         {isTitleEditing ? (
                             <input
                                 autoFocus
@@ -207,23 +219,35 @@ export function CanvasTopBar({
                             aria-label="搜索画布节点"
                         />
                     </CanvasTopBarTooltip>
-                    <CanvasTopBarTooltip label="导入第三方画布" suppressed={importMenuOpen}>
-                        <Dropdown
-                            trigger={["click"]}
-                            placement="bottomRight"
-                            onOpenChange={setImportMenuOpen}
-                            menu={{
-                                items: [
-                                    { key: "libtv", icon: <CopyPlus className="size-4" />, label: "导入 LibTV 画布", onClick: onImportLibTV },
-                                    { key: "tapnow", icon: <CloudDownload className="size-4" />, label: "导入 TapNow 画布", onClick: onImportTapNow },
-                                ],
-                            }}
-                        >
-                            <Button type="text" className="canvas-topbar-action canvas-topbar-import-button !h-10 !rounded-xl !px-2 !font-medium" style={{ color: theme.node.text }} icon={<CloudDownload className="size-4" />} aria-label="导入第三方画布">
-                                <span className="hidden lg:inline">导入第三方画布</span>
-                            </Button>
-                        </Dropdown>
-                    </CanvasTopBarTooltip>
+                    {remix ? (
+                        <Button type="text" className="canvas-topbar-action !h-10 !rounded-xl !px-3 !font-medium" style={{ color: theme.node.text }} onClick={onImportVideo} aria-pressed={videoImportOpen}>
+                            导入视频链接
+                        </Button>
+                    ) : (
+                        <CanvasTopBarTooltip label="导入第三方画布" suppressed={importMenuOpen}>
+                            <Dropdown
+                                trigger={["click"]}
+                                placement="bottomRight"
+                                onOpenChange={setImportMenuOpen}
+                                menu={{
+                                    items: [
+                                        { key: "libtv", icon: <CopyPlus className="size-4" />, label: "导入 LibTV 画布", onClick: onImportLibTV },
+                                        { key: "tapnow", icon: <CloudDownload className="size-4" />, label: "导入 TapNow 画布", onClick: onImportTapNow },
+                                    ],
+                                }}
+                            >
+                                <Button
+                                    type="text"
+                                    className="canvas-topbar-action canvas-topbar-import-button !h-10 !rounded-xl !px-2 !font-medium"
+                                    style={{ color: theme.node.text }}
+                                    icon={<CloudDownload className="size-4" />}
+                                    aria-label="导入第三方画布"
+                                >
+                                    <span className="hidden lg:inline">导入第三方画布</span>
+                                </Button>
+                            </Dropdown>
+                        </CanvasTopBarTooltip>
+                    )}
                     {user && creditsEnabled ? (
                         <CanvasTopBarTooltip label="打开积分中心">
                             <button
